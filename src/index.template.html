@@ -76,6 +76,11 @@
       <button class="btn" id="btnFlip">Mirror</button>
     </div>
     <p class="note" id="placeinfo"></p>
+    <div class="row"><label>Camera zoom</label>
+      <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
+    <p class="note">Zooms the camera view itself, not the traced image - so you can move the
+      phone closer to the page for a steadier, more detailed view while still framing the
+      whole area you're drawing on.</p>
     <label class="toggle"><input type="checkbox" id="grid"> Proportion grid</label>
     <div class="row"><label>Grid cells</label>
       <input type="range" id="gridN" min="2" max="8" value="3"><output id="gridNOut">3×3</output></div>

@@ -19,6 +19,7 @@ const state = {
   running: false,
   freeze: false,
   mirrored: false,
+  camZoom: 1,
   locked: false,
   freehand: false,
   showGrid: false,
@@ -194,7 +195,22 @@ const hudCtx = el.hud.getContext('2d');
 /* ------------------------------------------------------------- geometry */
 function dpr() { return Math.min(2, window.devicePixelRatio || 1); }
 
-/** object-fit: cover mapping from video pixels to CSS pixels. */
+/** Combines the mirror flip and digital zoom into one CSS transform on the
+ * video/overlay layers - videoToCssMatrix() computes the matching JS-side
+ * matrix independently, so the two stay in sync without depending on each
+ * other's exact values. */
+function updateCamTransform() {
+  const t = (state.mirrored ? 'scaleX(-1) ' : '') + `scale(${state.camZoom})`;
+  el.video.style.transform = t;
+  el.gl.style.transform = t;
+  el.hud.style.transform = t;
+}
+
+/** object-fit: cover mapping from video pixels to CSS pixels. Digital zoom
+ * (state.camZoom) is applied separately, as a pure CSS transform on the
+ * video/overlay layers (see updateCamTransform) - this matrix stays in the
+ * real, unzoomed coordinate space that detection and this drawing both
+ * still use; only the on-screen presentation is scaled. */
 function videoToCssMatrix() {
   const vw = el.video.videoWidth || 1280, vh = el.video.videoHeight || 720;
   const cw = window.innerWidth, ch = window.innerHeight;
@@ -232,9 +248,17 @@ function rectMatrix() {
 
 /** Screen (CSS px) -> paper units. Null while we have no pose. */
 function cssToPaper(x, y) {
-  // The video/overlay layers are mirrored for display only (CSS transform) -
-  // detection and this whole matrix chain still work in real, unmirrored
-  // coordinates, so a mirrored screen position has to be un-mirrored first.
+  // The video/overlay layers are mirrored and/or zoomed for display only
+  // (CSS transform - see updateCamTransform). Detection and this whole
+  // matrix chain still work in real, untransformed coordinates, so a
+  // touched screen position has to be converted back to that space first.
+  // Zoom and mirror are both diagonal scales about the viewport centre, so
+  // they commute - order between them doesn't matter.
+  if (state.camZoom !== 1) {
+    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    x = cx + (x - cx) / state.camZoom;
+    y = cy + (y - cy) / state.camZoom;
+  }
   if (state.mirrored) x = window.innerWidth - x;
   const M = paperToCss();
   if (!M) return null;
@@ -1132,9 +1156,7 @@ function wire() {
   $('btnMirror').addEventListener('click', (e) => {
     state.mirrored = !state.mirrored;
     e.currentTarget.classList.toggle('on', state.mirrored);
-    el.video.classList.toggle('mirror', state.mirrored);
-    el.gl.classList.toggle('mirror', state.mirrored);
-    el.hud.classList.toggle('mirror', state.mirrored);
+    updateCamTransform();
     toast(state.mirrored ? 'Mirrored to match your table' : 'Mirror off');
   });
   $('btnShot').addEventListener('click', snapshot);
@@ -1161,6 +1183,11 @@ function wire() {
     toast('Anchors cleared - sweep across your tags again');
   });
 
+  $('camZoom').addEventListener('input', (e) => {
+    state.camZoom = Number(e.target.value) / 100;
+    $('camZoomOut').textContent = state.camZoom.toFixed(1) + '×';
+    updateCamTransform();
+  });
   $('grid').addEventListener('change', (e) => { state.showGrid = e.target.checked; });
   $('gridN').addEventListener('input', (e) => {
     state.gridN = Number(e.target.value);
