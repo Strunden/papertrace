@@ -100,6 +100,14 @@ h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em;
 h3 + p, .note { margin: -4px 0 12px; font-size: 12.5px; color: var(--dim); }
 .note a { color: var(--accent); }
 
+details { margin-bottom: 12px; }
+details summary { cursor: pointer; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details summary::before { content: '▸ '; }
+details[open] summary::before { content: '▾ '; }
+details[open] summary { margin-bottom: 8px; }
+details .note:last-child { margin-bottom: 0; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
 .chip {
   padding: 8px 13px; border-radius: 11px; font-size: 13px; cursor: pointer;

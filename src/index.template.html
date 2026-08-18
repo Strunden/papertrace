@@ -62,10 +62,11 @@
 
   <!-- ------------------------------------------------------------ place -->
   <div class="panel" data-panel="place">
-    <h3>Position on the paper</h3>
-    <p class="note">Drag with one finger to pan the camera view, pinch with two to zoom it -
-      handy for getting a closer, steadier look while you draw. The traced image itself is
-      placed automatically; use the buttons below to adjust it.</p>
+    <h3>Camera view</h3>
+    <p class="note">Drag to pan, pinch to zoom - get closer without losing the frame. The image
+      itself is placed automatically; adjust it with the buttons below.</p>
+    <div class="row"><label>Zoom</label>
+      <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
     <div class="btnrow">
       <button class="btn primary" id="btnLock">Lock camera view</button>
       <button class="btn" id="btnFit">Fit to tags</button>
@@ -77,14 +78,12 @@
       <button class="btn" id="btnFlip">Mirror</button>
     </div>
     <p class="note" id="placeinfo"></p>
-    <div class="row"><label>Camera zoom</label>
-      <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
-    <p class="note">Zooms the camera view itself, not the traced image - so you can move the
-      phone closer to the page for a steadier, more detailed view while still framing the
-      whole area you're drawing on.</p>
-    <label class="toggle"><input type="checkbox" id="grid"> Proportion grid</label>
-    <div class="row"><label>Grid cells</label>
-      <input type="range" id="gridN" min="2" max="8" value="3"><output id="gridNOut">3×3</output></div>
+    <details>
+      <summary class="note">More options</summary>
+      <label class="toggle"><input type="checkbox" id="grid"> Proportion grid</label>
+      <div class="row"><label>Grid cells</label>
+        <input type="range" id="gridN" min="2" max="8" value="3"><output id="gridNOut">3×3</output></div>
+    </details>
   </div>
 
   <!-- ------------------------------------------------------------- tags -->
@@ -92,28 +91,22 @@
     <h3>Tracking anchors</h3>
     <div class="taglist" id="taglist"></div>
     <p class="note" id="mapinfo"></p>
-    <p class="note">
-      Sweep the phone slowly across all your tags once. The app learns where they sit
-      relative to each other, and from then on any single tag holds the overlay in place.
-      <b>Two or more tags in view is much steadier than one</b> - with a single small tag the
-      perspective has to be guessed from four corners, so the overlay wanders a little.
-    </p>
+    <p class="note">Sweep the phone across your tags once to learn them - after that, any one
+      tag holds the overlay in place. <b>Two or more in view is steadier than one.</b></p>
     <div class="btnrow">
       <button class="btn" id="btnReset">Reset anchors</button>
-      <button class="btn" id="btnTags2">Tag sheet to print</button>
-      <button class="btn" id="btnDebugLog">Save debug log</button>
+      <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
     </div>
-    <p class="note">If tags aren't anchoring, tap <b>Save debug log</b> after a few seconds of
-      pointing the camera at them - it downloads a text file recording, frame by frame, what was
-      seen and why each tag did or didn't register. Nothing in it leaves your device unless you
-      choose to share the file.</p>
-    <p class="note">Or skip cutting altogether - a ready-to-draw canvas with the tags already
-      placed and a postcard-sized frame in the middle:
-      <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4 PDF</a>
-      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter PDF</a>.</p>
-    <label class="toggle"><input type="checkbox" id="freehand"> Freehand mode (no tags)</label>
-    <p class="note">Freehand pins the image to the screen instead of the paper - handy for a quick
-      look before you have printed anything, but it will drift as soon as you move the phone.</p>
+    <details>
+      <summary class="note">Printing tags, or tracking not working?</summary>
+      <p class="note">Ready-to-draw canvas (tags pre-placed, frame in the middle):
+        <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4</a>
+        · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter</a>
+        &nbsp;·&nbsp; <button class="btn" id="btnTags2" style="padding:2px 9px;font-size:12.5px">cut-out tag sheet</button></p>
+      <p class="note">If tags won't anchor: <button class="btn" id="btnDebugLog" style="padding:2px 9px;font-size:12.5px">Save debug log</button>
+        after pointing the camera at them a few seconds - a text file of what was seen and why each
+        tag did or didn't register. Stays on your device unless you share it.</p>
+    </details>
   </div>
 </div>
 
@@ -131,8 +124,8 @@
 <div class="screen on" id="start">
   <div class="inner">
     <h1>PaperTrace AR</h1>
-    <p class="lead">Hold your phone over your sketchbook and see the picture lying on the page.
-      Printed tags keep it locked to the paper while you draw.</p>
+    <p class="lead">Hold your phone over your paper and see your picture lying on the page,
+      ready to trace.</p>
 
     <div id="insecure" style="display:none;background:#3a2020;border:1px solid #6b3535;
          border-radius:12px;padding:14px;margin-bottom:18px">
@@ -144,23 +137,19 @@
 
     <div class="hero">
       <button class="btn primary" id="btnStart">Start camera</button>
-      <button class="btn" id="btnTags">Tag sheet to print</button>
-      <button class="btn" id="btnHelp">How it works</button>
     </div>
 
-    <h2>The short version</h2>
     <ol>
-      <li>Print the tag sheet and cut out 3-6 tags.</li>
-      <li>Stick them around your drawing area, anywhere you like.</li>
-      <li>Start the camera and sweep slowly across all the tags once.</li>
-      <li>Pick an image, choose a trace style, drag it into place, lock it, draw.</li>
+      <li>Point your phone at a few printed tags (see below if you need some).</li>
+      <li>Pick an image - it appears locked to the page, in perspective.</li>
+      <li>Choose a trace style and draw.</li>
     </ol>
-    <p class="note">Nothing to cut out? Download a ready-to-draw canvas instead - tags already
-      placed close together, postcard-sized frame in the middle for your image:
-      <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4 PDF</a>
-      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter PDF</a>.</p>
-    <p class="note">Nothing leaves your device. There is no account, no upload and no network
-      request - the camera feed and your images are processed entirely in the browser.</p>
+
+    <p class="note">Need tags first? <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Ready-to-draw canvas (A4)</a>
+      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">(Letter)</a>
+      · <button class="btn" id="btnTags" style="padding:2px 9px;font-size:12.5px">cut-out tag sheet</button>
+      · <button class="btn" id="btnHelp" style="padding:2px 9px;font-size:12.5px">how it works</button></p>
+    <p class="note">Nothing leaves your device - no account, no upload, no network request.</p>
   </div>
 </div>
 
