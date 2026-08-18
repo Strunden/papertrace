@@ -12,3 +12,6 @@ build/*
 !build/flowers.json
 !build/papertrace-markers-A4.pdf
 !build/papertrace-markers-Letter.pdf
+
+# transport artefact from the Claude session
+papertrace-repo.tgz
