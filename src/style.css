@@ -30,6 +30,12 @@ html, body {
 #hud { z-index: 2; }
 #touch { position: fixed; inset: 0; z-index: 3; touch-action: none; }
 
+/* Desktop webcams aren't mirrored by default, so what's on screen can look
+   flipped left-right relative to the table in front of you. This flips only
+   the camera/overlay layers for display - detection and gestures still work
+   in real, unmirrored coordinates (see state.mirrored in app.js). */
+#video.mirror, #gl.mirror, #hud.mirror { transform: scaleX(-1); }
+
 /* ------------------------------------------------------------- top bar */
 #topbar {
   position: fixed; z-index: 6; left: 0; right: 0;

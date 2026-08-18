@@ -18,6 +18,7 @@ const el = {
 const state = {
   running: false,
   freeze: false,
+  mirrored: false,
   locked: false,
   freehand: false,
   showGrid: false,
@@ -226,6 +227,10 @@ function rectMatrix() {
 
 /** Screen (CSS px) -> paper units. Null while we have no pose. */
 function cssToPaper(x, y) {
+  // The video/overlay layers are mirrored for display only (CSS transform) -
+  // detection and this whole matrix chain still work in real, unmirrored
+  // coordinates, so a mirrored screen position has to be un-mirrored first.
+  if (state.mirrored) x = window.innerWidth - x;
   const M = paperToCss();
   if (!M) return null;
   const Mi = matInv(M);
@@ -564,7 +569,14 @@ function drawHud(M) {
       c.fillStyle = known ? 'rgba(87,217,163,.95)' : 'rgba(255,200,87,.95)';
       c.font = '600 11px system-ui';
       c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(String(d.id), ctr[0], ctr[1]);
+      // The whole hud canvas gets CSS-mirrored for display when state.mirrored
+      // is on, which would draw this text backwards - counter-flip just the
+      // glyphs around their own anchor so the number still reads correctly.
+      c.save();
+      c.translate(ctr[0], ctr[1]);
+      if (state.mirrored) c.scale(-1, 1);
+      c.fillText(String(d.id), 0, 0);
+      c.restore();
     }
   }
 
@@ -971,6 +983,10 @@ function snapshot() {
   c.width = window.innerWidth * dpr();
   c.height = window.innerHeight * dpr();
   const x = c.getContext('2d');
+  // drawImage reads the source elements' real pixels, ignoring whatever CSS
+  // transform is mirroring them on screen - mirror the export the same way
+  // by hand, or a saved snapshot would silently not match what was visible.
+  if (state.mirrored) { x.translate(c.width, 0); x.scale(-1, 1); }
   const vw = el.video.videoWidth, vh = el.video.videoHeight;
   if (vw) {
     const s = Math.max(c.width / vw, c.height / vh);
@@ -1008,6 +1024,14 @@ function wire() {
       await track.applyConstraints({ advanced: [{ torch: on }] });
       e.currentTarget.classList.toggle('on', on);
     } catch (err) { toast('Torch not available'); }
+  });
+  $('btnMirror').addEventListener('click', (e) => {
+    state.mirrored = !state.mirrored;
+    e.currentTarget.classList.toggle('on', state.mirrored);
+    el.video.classList.toggle('mirror', state.mirrored);
+    el.gl.classList.toggle('mirror', state.mirrored);
+    el.hud.classList.toggle('mirror', state.mirrored);
+    toast(state.mirrored ? 'Mirrored to match your table' : 'Mirror off');
   });
   $('btnShot').addEventListener('click', snapshot);
 
