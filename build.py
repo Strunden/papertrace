@@ -16,12 +16,21 @@ css = read(SRC, "style.css")
 dictionary = json.loads(read(BUILD, "dictionary.json"))
 flowers = json.loads(read(BUILD, "flowers.json"))
 
+# Marker detection also runs standalone inside a Worker (see the detection
+# section of app.js) - geom.js + aruco.js again, plus the dictionary they need
+# since a Worker has no access to window.__DICT__, shipped as a JS string the
+# main thread turns into a Blob URL at runtime.
+WORKER_JS_FILES = ["geom.js", "aruco.js", "worker.js"]
+worker_js = ("const DICT = " + json.dumps(dictionary, separators=(",", ":")) + ";\n"
+             + "\n\n".join(f"/* ===== {f} ===== */\n" + read(SRC, f) for f in WORKER_JS_FILES))
+
 html = read(SRC, "index.template.html")
 # Plain replacement, not re.sub: the payloads contain backslashes and $ sequences
 # that re would try to interpret as group references.
 for token, payload in (("/*__CSS__*/", css),
                        ("/*__DICT__*/null", json.dumps(dictionary, separators=(",", ":"))),
                        ("/*__FLOWERS__*/null", json.dumps(flowers, separators=(",", ":"))),
+                       ("/*__WORKERJS__*/null", json.dumps(worker_js)),
                        ("/*__JS__*/", js)):
     assert token in html, "missing token " + token
     html = html.replace(token, payload, 1)

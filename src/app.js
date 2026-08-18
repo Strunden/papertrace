@@ -292,35 +292,22 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* ------------------------------------------------------------ detection */
+// Detection is the one per-frame step expensive enough to jank the display -
+// adaptive thresholding and contour tracing over a few hundred thousand
+// pixels, in plain JS. Where the browser supports it, it runs in a Worker
+// (see worker.js) so a slow frame delays the *pose*, not the *paint*: the
+// camera feed and drag/pinch gestures keep moving at full frame rate no
+// matter how long a frame takes to decode.
 const detCanvas = document.createElement('canvas');
 const detCtx = detCanvas.getContext('2d', { willReadFrequently: true });
 let grayBuf = null;
 
-function detectFrame() {
-  const vw = el.video.videoWidth, vh = el.video.videoHeight;
-  if (!vw || !vh) return;
-  const target = state.detW;
-  const dh = Math.round(target * vh / vw);
-  if (detCanvas.width !== target || detCanvas.height !== dh) {
-    detCanvas.width = target; detCanvas.height = dh;
-    grayBuf = new Uint8ClampedArray(target * dh);
-  }
-  state.detH = dh;
-  detCtx.drawImage(el.video, 0, 0, target, dh);
-  const img = detCtx.getImageData(0, 0, target, dh).data;
-  const g = grayBuf;
-  for (let i = 0, j = 0; j < g.length; i += 4, j++) {
-    g[j] = (img[i] * 77 + img[i + 1] * 150 + img[i + 2] * 29) >> 8;
-  }
-
-  const t0 = performance.now();
-  const dets = detector.detect(g, target, dh);
+function applyDetections(dets, ms, detW) {
   const res = markerMap.update(dets);
-  const ms = performance.now() - t0;
   state.detectMs = state.detectMs * 0.85 + ms * 0.15;
 
   state.lastResult = res;
-  if (res.H) { state.pose = res.H; state.poseDetW = target; }
+  if (res.H) { state.pose = res.H; state.poseDetW = detW; }
   if (!res.H && !res.holding) state.pose = null;
   if (res.registered && res.registered.length) {
     toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
@@ -339,6 +326,67 @@ function detectFrame() {
     const sig = markerMap.size + ':' + state.aspect.toFixed(3);
     if (sig !== state.fitSig) { state.fitSig = sig; fitToTags(); state.placed = true; }
   }
+}
+
+function detectFrameSync(target, dh) {
+  detCtx.drawImage(el.video, 0, 0, target, dh);
+  const img = detCtx.getImageData(0, 0, target, dh).data;
+  const g = grayBuf;
+  for (let i = 0, j = 0; j < g.length; i += 4, j++) {
+    g[j] = (img[i] * 77 + img[i + 1] * 150 + img[i + 2] * 29) >> 8;
+  }
+  const t0 = performance.now();
+  const dets = detector.detect(g, target, dh);
+  const ms = performance.now() - t0;
+  applyDetections(dets, ms, target);
+}
+
+/* ---- worker offload, with a same-thread fallback if it's unavailable --- */
+let detWorker = null, workerBusy = false;
+try {
+  if (window.__WORKERSRC__ && typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+    const blobUrl = URL.createObjectURL(new Blob([window.__WORKERSRC__], { type: 'text/javascript' }));
+    detWorker = new Worker(blobUrl);
+    detWorker.onmessage = (e) => {
+      workerBusy = false;
+      applyDetections(e.data.dets, e.data.ms, e.data.w);
+    };
+    detWorker.onerror = () => { workerBusy = false; detWorker = null; };
+  }
+} catch (e) { detWorker = null; }
+
+// requestVideoFrameCallback ties detection to actual new camera frames rather
+// than the display's refresh rate, so a phone whose camera negotiates 24-30fps
+// isn't re-processing the same frame two or three times over. Falls back to
+// running on every render tick where it isn't supported.
+const useVFC = typeof el.video.requestVideoFrameCallback === 'function';
+let newVideoFrame = true;
+if (useVFC) {
+  const markFresh = () => { newVideoFrame = true; el.video.requestVideoFrameCallback(markFresh); };
+  el.video.requestVideoFrameCallback(markFresh);
+}
+
+function detectFrame() {
+  if (useVFC) {
+    if (!newVideoFrame) return;
+    newVideoFrame = false;
+  }
+  const vw = el.video.videoWidth, vh = el.video.videoHeight;
+  if (!vw || !vh) return;
+  const target = state.detW;
+  const dh = Math.round(target * vh / vw);
+  if (detCanvas.width !== target || detCanvas.height !== dh) {
+    detCanvas.width = target; detCanvas.height = dh;
+    grayBuf = new Uint8ClampedArray(target * dh);
+  }
+  state.detH = dh;
+
+  if (!detWorker) { detectFrameSync(target, dh); return; }
+  if (workerBusy) return;   // previous frame still decoding - skip, keep the last pose
+  workerBusy = true;
+  createImageBitmap(el.video, { resizeWidth: target, resizeHeight: dh })
+    .then((bitmap) => detWorker.postMessage({ bitmap, w: target, h: dh }, [bitmap]))
+    .catch(() => { workerBusy = false; });
 }
 
 function setDetW(next) {
