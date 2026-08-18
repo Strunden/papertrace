@@ -199,6 +199,17 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ------------------------------------------------------------------ crop */
+#crop { padding: 0; touch-action: none; }
+#cropCanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#cropBar {
+  position: fixed; z-index: 21; left: 0; right: 0; bottom: 0;
+  padding: 16px 22px calc(16px + var(--pad));
+  background: linear-gradient(to top, rgba(13,15,19,.95), rgba(13,15,19,0));
+}
+#cropBar .note { color: #fff; text-align: center; margin-bottom: 12px; }
+#cropBar .hero { justify-content: center; margin: 0; }
+
 /* -------------------------------------------------------- printable tags */
 #printsheet { background: #fff; color: #000; }
 #printsheet .inner { max-width: 900px; }
@@ -430,6 +441,18 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       anywhere, and the app makes no network requests at all once it has loaded.</p>
 
     <div class="hero"><button class="btn primary" data-close>Back</button></div>
+  </div>
+</div>
+
+<!-- =============================================================== crop -->
+<div class="screen" id="crop">
+  <canvas id="cropCanvas"></canvas>
+  <div id="cropBar">
+    <p class="note">Drag to reposition, pinch to zoom. Only what's inside the frame gets traced.</p>
+    <div class="hero">
+      <button class="btn" id="btnCropCancel">Cancel</button>
+      <button class="btn primary" id="btnCropUse">Use this crop</button>
+    </div>
   </div>
 </div>
 
@@ -2104,7 +2127,7 @@ const el = {
   sheet: $('sheet'), dock: $('dock'), status: $('status'), statusDot: $('statusDot'),
   toast: $('toast'), busy: $('busy'), lib: $('lib'), file: $('file'),
   presets: $('presets'), colours: $('colours'), taglist: $('taglist'),
-  mapinfo: $('mapinfo'), placeinfo: $('placeinfo'),
+  mapinfo: $('mapinfo'), placeinfo: $('placeinfo'), cropCanvas: $('cropCanvas'),
 };
 
 const state = {
@@ -2925,6 +2948,24 @@ const endPointer = (e) => {
 el.touch.addEventListener('pointerup', endPointer);
 el.touch.addEventListener('pointercancel', endPointer);
 
+el.cropCanvas.addEventListener('pointerdown', (e) => {
+  el.cropCanvas.setPointerCapture(e.pointerId);
+  cropPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  beginCropGesture();
+});
+el.cropCanvas.addEventListener('pointermove', (e) => {
+  if (!cropPointers.has(e.pointerId)) return;
+  cropPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  applyCropGesture();
+});
+const endCropPointer = (e) => {
+  if (!cropPointers.has(e.pointerId)) return;
+  cropPointers.delete(e.pointerId);
+  beginCropGesture();
+};
+el.cropCanvas.addEventListener('pointerup', endCropPointer);
+el.cropCanvas.addEventListener('pointercancel', endCropPointer);
+
 // Gestures drive the camera view (pan + zoom), not the traced image - the
 // image is placed automatically (fitToFrame/fitToTags) and fine-tuned with
 // the Rotate/Upright/Mirror buttons instead. Plain screen-pixel deltas, no
@@ -3006,22 +3047,182 @@ async function chooseLibrary(key) {
   } finally { busy(false); }
 }
 
-async function loadUserFile(file) {
-  busy(true); await raf();
+/**
+ * createImageBitmap decodes directly from the File - no object URL, no <img>
+ * element, and (with imageOrientation) it applies EXIF rotation itself. Phone
+ * photos are routinely EXIF-rotated (the pixels are sideways, a tag says how
+ * to display them), which <img> handles inconsistently across browsers; this
+ * doesn't. Falls back to the old <img>-based path for anything that can't be
+ * decoded this way.
+ */
+async function decodeUserImage(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (e) { /* fall through to the <img> path below */ }
+  }
   const url = URL.createObjectURL(file);
   try {
-    const img = await loadImageEl(url);
-    drawSourceFrom(img, img.naturalWidth, img.naturalHeight);
-    state.selected = null;
-    markSelected();
-    await restyle(true);
-    toast('Loaded ' + file.name);
+    return await loadImageEl(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function loadUserFile(file) {
+  busy(true); await raf();
+  try {
+    const bitmap = await decodeUserImage(file);
+    const w = bitmap.naturalWidth || bitmap.width, h = bitmap.naturalHeight || bitmap.height;
+    if (!w || !h) throw new Error('decoded image has no size');
+    openCrop(bitmap, w, h, file.name);
   } catch (e) {
     toast('Could not read that image - try exporting it as JPEG or PNG');
   } finally {
-    URL.revokeObjectURL(url);
     busy(false);
   }
+}
+
+/* -------------------------------------------------------------- cropping */
+// A photo is rarely already framed the way you want to trace it - this lets
+// you pan/zoom to the part you actually want before it's committed. Reuses
+// the same screen-pixel pan/pinch-zoom pattern as the camera view (see
+// beginGesture/applyGesture) for a consistent feel.
+let cropSrc = null;             // { bitmap, w, h, name }
+let cropView = { zoom: 1, panX: 0, panY: 0 };
+let cropGesture = null;
+
+function cropFrameRect() {
+  const cw = window.innerWidth, ch = window.innerHeight;
+  const aspect = state.presetFrame ? state.presetFrame.w / state.presetFrame.h : 0.8;
+  const maxW = cw * 0.86, maxH = ch * 0.62;
+  let fw = maxW, fh = fw / aspect;
+  if (fh > maxH) { fh = maxH; fw = fh * aspect; }
+  return { x: (cw - fw) / 2, y: (ch - fh) / 2 - 18, w: fw, h: fh };
+}
+
+function cropBaseScale() {
+  const cw = window.innerWidth, ch = window.innerHeight;
+  return Math.max(cw / cropSrc.w, ch / cropSrc.h);
+}
+
+function clampCropPan() {
+  const cw = window.innerWidth, ch = window.innerHeight;
+  const s = cropBaseScale() * cropView.zoom;
+  const frame = cropFrameRect();
+  // The frame must stay fully inside the (scaled) image on every side.
+  const maxPanX = Math.max(0, (cropSrc.w * s - frame.w) / 2 - (cw / 2 - frame.x - frame.w / 2));
+  const maxPanY = Math.max(0, (cropSrc.h * s - frame.h) / 2 - (ch / 2 - frame.y - frame.h / 2));
+  cropView.panX = Math.max(-maxPanX, Math.min(maxPanX, cropView.panX));
+  cropView.panY = Math.max(-maxPanY, Math.min(maxPanY, cropView.panY));
+}
+
+function openCrop(bitmap, w, h, name) {
+  cropSrc = { bitmap, w, h, name };
+  const frame = cropFrameRect();
+  // Start zoomed so the frame is already fully covered (cover-fit within the
+  // frame, not the whole screen) - an empty/blank crop on open would be
+  // confusing, and this is what every other crop tool defaults to.
+  const s0 = cropBaseScale();
+  const coverFrame = Math.max(frame.w / (cropSrc.w * s0), frame.h / (cropSrc.h * s0));
+  cropView = { zoom: Math.max(1, coverFrame), panX: 0, panY: 0 };
+  clampCropPan();
+  showScreen('crop');
+  renderCrop();
+}
+
+function renderCrop() {
+  const c = el.cropCanvas;
+  const d = dpr();
+  const cw = window.innerWidth, ch = window.innerHeight;
+  c.width = Math.round(cw * d); c.height = Math.round(ch * d);
+  const ctx = c.getContext('2d');
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  ctx.fillStyle = '#0d0f13';
+  ctx.fillRect(0, 0, cw, ch);
+
+  const s = cropBaseScale() * cropView.zoom;
+  const dw = cropSrc.w * s, dh = cropSrc.h * s;
+  const dx = cw / 2 + cropView.panX - dw / 2, dy = ch / 2 + cropView.panY - dh / 2;
+  ctx.drawImage(cropSrc.bitmap, dx, dy, dw, dh);
+
+  // Dim everything outside the crop frame so it's obvious what's kept.
+  const f = cropFrameRect();
+  ctx.fillStyle = 'rgba(13,15,19,.72)';
+  ctx.fillRect(0, 0, cw, f.y);
+  ctx.fillRect(0, f.y + f.h, cw, ch - f.y - f.h);
+  ctx.fillRect(0, f.y, f.x, f.h);
+  ctx.fillRect(f.x + f.w, f.y, cw - f.x - f.w, f.h);
+  ctx.strokeStyle = 'rgba(255,255,255,.9)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(f.x, f.y, f.w, f.h);
+}
+
+const cropPointers = new Map();
+function beginCropGesture() {
+  cropGesture = {
+    pts: [...cropPointers.values()].map((p) => ({ x: p.x, y: p.y })),
+    zoom: cropView.zoom, panX: cropView.panX, panY: cropView.panY,
+  };
+}
+
+function applyCropGesture() {
+  if (!cropGesture) return;
+  const now = [...cropPointers.values()].map((p) => ({ x: p.x, y: p.y }));
+  if (now.length !== cropGesture.pts.length) return;
+  const g = cropGesture;
+  if (now.length === 1) {
+    cropView.panX = g.panX + (now[0].x - g.pts[0].x);
+    cropView.panY = g.panY + (now[0].y - g.pts[0].y);
+  } else if (now.length >= 2) {
+    const [a0, b0] = g.pts, [a1, b1] = now;
+    const d0 = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+    const d1 = Math.hypot(b1.x - a1.x, b1.y - a1.y);
+    if (d0 < 1e-6) return;
+    const m0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
+    const m1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
+    cropView.zoom = Math.max(1, Math.min(8, g.zoom * (d1 / d0)));
+    cropView.panX = g.panX + (m1.x - m0.x);
+    cropView.panY = g.panY + (m1.y - m0.y);
+  }
+  clampCropPan();
+  renderCrop();
+}
+
+async function commitCrop() {
+  if (!cropSrc) return;
+  const s = cropBaseScale() * cropView.zoom;
+  const cw = window.innerWidth, ch = window.innerHeight;
+  const f = cropFrameRect();
+  // Inverse of the draw transform in renderCrop(): screen -> source-bitmap px.
+  const sx = (f.x - cw / 2 - cropView.panX) / s + cropSrc.w / 2;
+  const sy = (f.y - ch / 2 - cropView.panY) / s + cropSrc.h / 2;
+  const sw = f.w / s, sh = f.h / s;
+
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(sw));
+  out.height = Math.max(1, Math.round(sh));
+  out.getContext('2d').drawImage(cropSrc.bitmap, sx, sy, sw, sh, 0, 0, out.width, out.height);
+
+  busy(true); await raf();
+  try {
+    drawSourceFrom(out, out.width, out.height);
+    state.selected = null;
+    markSelected();
+    await restyle(true);
+    toast('Loaded ' + cropSrc.name);
+  } finally {
+    busy(false);
+  }
+  cancelCrop();
+}
+
+function cancelCrop() {
+  if (cropSrc && cropSrc.bitmap && cropSrc.bitmap.close) cropSrc.bitmap.close();
+  cropSrc = null;
+  cropGesture = null;
+  hideScreens();
+  if (!state.running) showScreen('start');
 }
 
 let restyleTimer = null;
@@ -3311,6 +3512,9 @@ function wire() {
     if (e.target.files && e.target.files[0]) loadUserFile(e.target.files[0]);
     e.target.value = '';
   });
+  $('btnCropCancel').addEventListener('click', cancelCrop);
+  $('btnCropUse').addEventListener('click', commitCrop);
+  window.addEventListener('resize', () => { if (cropSrc) { clampCropPan(); renderCrop(); } });
 
   $('btnTags').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
   $('btnTags2').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
