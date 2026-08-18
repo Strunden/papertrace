@@ -18,5 +18,9 @@ build/*
 # transport artefact from the Claude session
 papertrace-repo.tgz
 
-# local venv used to run gen_*.py (reportlab/numpy/pillow)
+# local venv used to run gen_*.py (reportlab/numpy/pillow) and test/replay.py
+# (playwright)
 .venv/
+
+# test/replay.py's scratch output - transcoded footage, log, last-frame screenshot
+test/_replay_*

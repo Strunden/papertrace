@@ -135,6 +135,27 @@ projective texture mapping.
 
 ---
 
+## Debugging tracking issues
+
+If tags won't anchor, open the **Tags** panel and tap **Save debug log** after
+pointing the camera at them for a few seconds - it downloads a text file
+recording, frame by frame, what was detected and exactly why each tag did or
+didn't register (too small in frame, phone not moving enough, bad fit, etc).
+
+To test *without a phone in hand at all*: `test/replay.py` feeds a recorded
+video into the real, unmodified app as a fake camera stream
+(`HTMLVideoElement.captureStream()` standing in for `getUserMedia`), headless,
+and prints that same debug log plus a screenshot of the last frame. Requires
+`ffmpeg` (footage gets transcoded to H.264 first - headless Chromium can't
+decode iPhone's default HEVC) and the dev deps in `.venv` (`pip install
+playwright reportlab numpy pillow && playwright install chromium`).
+
+```
+.venv/bin/python test/replay.py path/to/footage.mov
+```
+
+---
+
 ## Privacy
 
 Camera frames, the images you load, and everything derived from them stay in the
