@@ -7,9 +7,6 @@ import numpy as np
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
-from reportlab.lib import colors
-from svglib.svglib import svg2rlg
-from reportlab.graphics import renderPDF
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, "build")
@@ -24,7 +21,6 @@ STICKER = MARKER_MM + 2 * QUIET
 TAG_GAP = 5 * mm                    # frame-to-tag gap - tight cluster stays in one camera shot
 
 FRAME_W, FRAME_H = 101.6 * mm, 152.4 * mm   # 4x6in postcard, portrait
-FRAME_INSET = 4 * mm                        # sample image sits this far inside the frame rule
 
 
 def grid(code):
@@ -60,24 +56,6 @@ def draw_frame(c, x, y, w, h):
     c.restoreState()
 
 
-def recolor(node, gray):
-    if getattr(node, "strokeColor", None) is not None:
-        node.strokeColor = gray
-    if getattr(node, "fillColor", None) is not None:
-        node.fillColor = gray
-    for child in getattr(node, "contents", ()):
-        recolor(child, gray)
-
-
-def draw_sample_image(c, x, y, w, h):
-    """A built-in flower, stretched non-uniformly to exactly fill the frame -
-    same fit the app uses when you drop a reference image onto these tags."""
-    d = svg2rlg(os.path.join(BUILD, "flower_tulip.svg"))
-    recolor(d, colors.Color(0.72, 0.72, 0.72))
-    d.scale(w / d.width, h / d.height)
-    renderPDF.draw(d, c, x, y)
-
-
 def build(path, pagesize, label):
     w, h = pagesize
     marker = MARKER_MM * mm
@@ -90,8 +68,6 @@ def build(path, pagesize, label):
     c = canvas.Canvas(path, pagesize=pagesize)
     c.setTitle("PaperTrace AR canvas")
 
-    draw_sample_image(c, fx + FRAME_INSET, fy + FRAME_INSET,
-                       FRAME_W - 2 * FRAME_INSET, FRAME_H - 2 * FRAME_INSET)
     draw_frame(c, fx, fy, FRAME_W, FRAME_H)
 
     corners = [
