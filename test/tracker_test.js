@@ -271,10 +271,13 @@ function runTrackerTests(dict) {
   }
 
   /* ---------------------------------------------- known-layout preset ---- */
-  // The printed papertrace-canvas-*.pdf sheet has 4 tags at a fixed, known
-  // relative arrangement (see gen_canvas.py) - MarkerMap should recognize it
-  // from a single frame and anchor all four instantly, no sweep needed. This
-  // matters most for a desktop webcam, which can never be swept at all.
+  // The printed papertrace-canvas-*.pdf sheet has 8 tags (4 corners + 4 edge
+  // midpoints) at a fixed, known relative arrangement (see gen_canvas.py) -
+  // MarkerMap should recognize it from a single frame and anchor all of them
+  // instantly, no sweep needed. This matters most for a desktop webcam,
+  // which can never be swept at all. Seeing just the 4 corners together
+  // (their own long-standing sub-case) should still anchor the full 8 -
+  // the preset is one layout, not two.
   {
     const CANVAS = [
       { id: 0, cx: -19.800, cy: 172.200, size: 20, angle: 0 },
@@ -288,9 +291,63 @@ function runTrackerTests(dict) {
     const Ht = viewHomography(Wc, Hc, 0.0002, -0.0001, 2.5, -95, -155, 0.05);
     const gray = renderScene({ w: Wc, h: Hc, H: Ht, markers: CANVAS, dict, blur: 0.6, noise: 1.5 });
     const res = mm.update(det.detect(gray, Wc, Hc));
-    log('known canvas layout: anchors instantly from one frame',
-        !!res.presetMatched && mm.size === 4,
-        `presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}/4, err ${res.err ? res.err.toFixed(2) : 'n/a'}px`);
+    log('known canvas layout: 4 corners anchor the full 8-tag preset instantly',
+        !!res.presetMatched && mm.size === 8,
+        `presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}/8, err ${res.err ? res.err.toFixed(2) : 'n/a'}px`);
+  }
+
+  // The 8-tag layout (corners + edge midpoints) - the midpoint entries were
+  // derived analytically (fitting the affine map between real mm and
+  // measured paper-unit positions - see the PRESET_LAYOUTS comment), not
+  // measured from a recording like the corners. This renders three midpoint
+  // tags at their real physical positions and runs them through the actual
+  // detector, checking the analytic values genuinely agree with what real
+  // detection reports - not just that they're self-consistent on paper.
+  // (3, not 2 - see _tryPreset's minimum: a 2-tag check verifies nothing.)
+  const CANVAS8 = [
+    { id: 0, cx: -19.800, cy: 172.200, size: 20, angle: 0 },
+    { id: 1, cx: 121.400, cy: 172.200, size: 20, angle: 0 },
+    { id: 2, cx: -19.800, cy: -19.800, size: 20, angle: 0 },
+    { id: 3, cx: 121.400, cy: -19.800, size: 20, angle: 0 },
+    { id: 4, cx: 50.800,  cy: 172.200, size: 20, angle: 0 },
+    { id: 5, cx: 50.800,  cy: -19.800, size: 20, angle: 0 },
+    { id: 6, cx: -19.800, cy: 76.200,  size: 20, angle: 0 },
+    { id: 7, cx: 121.400, cy: 76.200,  size: 20, angle: 0 },
+  ];
+  {
+    const det = new MarkerDetector(dict);
+    const mm = new MarkerMap();
+    const Wc = 640, Hc = 640;
+    // Frame three tags without any of the original corners - the case a
+    // hand covering the corners would leave visible.
+    const some = CANVAS8.filter((m) => m.id === 4 || m.id === 6 || m.id === 7);
+    const Ht = viewHomography(Wc, Hc, 0.0001, -0.0001, 2.6, -50.8 * 2.6, -110 * 2.6, 0.03);
+    const gray = renderScene({ w: Wc, h: Hc, H: Ht, markers: some, dict, blur: 0.5, noise: 1.2 });
+    const res = mm.update(det.detect(gray, Wc, Hc));
+    log('8-tag layout: 3 midpoint tags alone still anchor the full preset',
+        !!res.presetMatched && mm.size === 8,
+        `presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}/8, err ${res.err ? res.err.toFixed(2) : 'n/a'}px`);
+  }
+
+  // Regression test for the exact vulnerability the crash above uncovered:
+  // 2 tags reusing preset IDs, but in a totally different real arrangement,
+  // must NOT trigger the preset - a homography from exactly 2 quads to any
+  // other 2 quads always "fits" with ~zero error, so this used to pass a
+  // naive 2-tag check even though the geometry is completely wrong.
+  {
+    const WRONG_PAIR = [
+      { id: 6, cx: 0, cy: 0, size: 90, angle: 0.2 },
+      { id: 7, cx: 400, cy: 300, size: 90, angle: -0.5 },
+    ];
+    const det = new MarkerDetector(dict);
+    const mm = new MarkerMap();
+    const Wc = 640, Hc = 640;
+    const Ht = viewHomography(Wc, Hc, 0.0001, -0.0001, 0.7, -50, -80, 0.1);
+    const gray = renderScene({ w: Wc, h: Hc, H: Ht, markers: WRONG_PAIR, dict, blur: 0.5, noise: 1.2 });
+    const res = mm.update(det.detect(gray, Wc, Hc));
+    log('two unrelated tags reusing preset IDs: preset does NOT trigger',
+        !res.presetMatched && mm.size <= 1,
+        `presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}`);
   }
 
   // Safety net: tags 0-3 are also the first four "tag N" stickers on the

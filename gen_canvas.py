@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Printable PaperTrace canvases: 4 tags clustered tightly around a postcard-
-sized painting area, framed to show where the reference image lands (stretched
-to fill, corner to corner). No cutting or sticking required."""
+"""Printable PaperTrace canvases: 8 tags (4 corners + 4 edge midpoints)
+clustered tightly around a postcard-sized painting area, framed to show where
+the reference image lands (stretched to fill, corner to corner). No cutting
+or sticking required.
+
+The extra 4 mid-edge tags exist purely to raise the odds that 2+ tags are in
+view at once - a hand covering one corner still leaves an adjacent midpoint
+tag visible, and every pair of neighbouring tags sits roughly half the
+distance apart that the 4-corner-only layout had."""
 import json, os
 import numpy as np
 from reportlab.pdfgen import canvas
@@ -70,19 +76,23 @@ def build(path, pagesize, label):
 
     draw_frame(c, fx, fy, FRAME_W, FRAME_H)
 
-    corners = [
-        (fx - TAG_GAP - sticker, fy + FRAME_H + TAG_GAP, CODES[0]),              # top-left
-        (fx + FRAME_W + TAG_GAP, fy + FRAME_H + TAG_GAP, CODES[1]),              # top-right
-        (fx - TAG_GAP - sticker, fy - TAG_GAP - sticker, CODES[2]),              # bottom-left
-        (fx + FRAME_W + TAG_GAP, fy - TAG_GAP - sticker, CODES[3]),              # bottom-right
+    positions = [
+        (fx - TAG_GAP - sticker, fy + FRAME_H + TAG_GAP, CODES[0]),                    # top-left
+        (fx + FRAME_W + TAG_GAP, fy + FRAME_H + TAG_GAP, CODES[1]),                    # top-right
+        (fx - TAG_GAP - sticker, fy - TAG_GAP - sticker, CODES[2]),                    # bottom-left
+        (fx + FRAME_W + TAG_GAP, fy - TAG_GAP - sticker, CODES[3]),                    # bottom-right
+        (fx + FRAME_W / 2 - sticker / 2, fy + FRAME_H + TAG_GAP, CODES[4]),            # top-mid
+        (fx + FRAME_W / 2 - sticker / 2, fy - TAG_GAP - sticker, CODES[5]),            # bottom-mid
+        (fx - TAG_GAP - sticker, fy + FRAME_H / 2 - sticker / 2, CODES[6]),            # left-mid
+        (fx + FRAME_W + TAG_GAP, fy + FRAME_H / 2 - sticker / 2, CODES[7]),            # right-mid
     ]
-    for x, y, code in corners:
+    for x, y, code in positions:
         draw_marker(c, code, x + quiet, y + quiet, marker)
 
     c.setFont("Helvetica", 7)
     c.setFillColorRGB(0.6, 0.6, 0.6)
     c.drawCentredString(w / 2, 10 * mm,
-                         f"PaperTrace AR canvas · {label} · tags 0-3 · your image stretches to fill the frame")
+                         f"PaperTrace AR canvas · {label} · tags 0-7 · your image stretches to fill the frame")
     c.save()
     print("wrote", path, f"({label})")
 

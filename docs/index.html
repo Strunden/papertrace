@@ -1163,34 +1163,45 @@ const UNIT_SQUARE = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
 
 /**
  * Known-layout shortcut for the printed papertrace-canvas-*.pdf sheets
- * (see gen_canvas.py): 4 tags at fixed relative positions around a
- * postcard-sized frame. Ordinarily every layout is learnt from scratch by
- * sweeping the camera, because tags can be stuck anywhere - but this one
- * specific arrangement is known in advance, so two of its tags seen together
- * in a single frame is enough to anchor all four instantly, no sweep needed.
- * That matters most exactly where sweeping is hardest: a fixed desktop
- * webcam that can never move relative to the page.
+ * (see gen_canvas.py): 8 tags (4 corners + 4 edge midpoints) at fixed
+ * relative positions around a postcard-sized frame. Ordinarily every layout
+ * is learnt from scratch by sweeping the camera, because tags can be stuck
+ * anywhere - but this one specific arrangement is known in advance, so two
+ * of its tags seen together in a single frame is enough to anchor all of
+ * them instantly, no sweep needed. That matters most exactly where sweeping
+ * is hardest: a fixed desktop webcam that can never move relative to the
+ * page. The midpoint tags also exist to raise the odds that 2+ are ever in
+ * view together at all - a hand covering one corner still leaves an
+ * adjacent midpoint tag visible.
  *
- * These entries were not hand-derived - hand-deriving the rotation/scale
- * convention risked a subtle, silent mismatch with however aruco.js actually
- * assigns a marker's corner order. Instead they were measured by running the
- * real detector + MarkerMap on an actual recording of this printed sheet and
- * reading back the converged map (see test/replay.py) - so whatever
- * convention the code uses, this matches it by construction.
- *
- * IMPORTANT: tags 0-3 are also the first four "tag N" stickers on the
+ * IMPORTANT: tags 0-7 are also the first eight "tag N" stickers on the
  * ordinary cut-out sheet (gen_stickers.py), which mean nothing about their
  * arrangement. MarkerMap only trusts this preset after verifying the actual
  * observed geometry agrees with it (see _tryPreset) - matching IDs alone is
  * not enough.
  *
- * `frame` is the printed frame rectangle's own position in this same
- * coordinate system - not measured directly (there's no fiducial pattern to
- * detect on a blank frame), but derived by fitting the exact affine map
- * between the tags' real physical mm centres (gen_canvas.py) and their
- * measured paper-unit centres above, then applying that fit to the frame's
- * real mm corners. app.js uses this to place the loaded image exactly in the
- * frame instead of guessing from the tags' bounding box.
+ * Entries 0-3 (the corners) were measured, not hand-derived: hand-deriving
+ * the rotation/scale convention risked a subtle, silent mismatch with
+ * however aruco.js actually assigns a marker's corner order. Instead they
+ * were read back from the real detector + MarkerMap converging on an actual
+ * recording of this printed sheet (see test/replay.py) - so whatever
+ * convention the code uses, they match it by construction.
+ *
+ * Entries 4-7 (the midpoints) and `frame` were derived differently, since
+ * there's no recording of this newer 8-tag sheet to measure from: fit the
+ * exact affine map between the corner tags' real physical mm centres
+ * (gen_canvas.py) and their measured paper-unit centres above (4
+ * correspondences, least squares), then apply that fit to the midpoints' and
+ * the frame's real mm positions. This was cross-checked against a synthetic
+ * detector sweep of the new layout - which hit real, informative failures
+ * first (nearly-collinear reference tags make the general per-frame
+ * estimator's homography solve poorly conditioned - not a bug, an inherent
+ * limit of extrapolating from only 2 same-axis tags) before this affine
+ * approach replaced it. Its output for each midpoint lands almost exactly on
+ * the arithmetic mean of its two neighbouring corners, as it must given the
+ * neighbours are equidistant from it in real mm - a check the flawed
+ * detector-sweep attempt failed. app.js uses `frame` to place the loaded
+ * image exactly in the printed frame instead of guessing from tag bounds.
  */
 const PRESET_LAYOUTS = [
   {
@@ -1200,6 +1211,10 @@ const PRESET_LAYOUTS = [
       1: { c: [0, 0], s: 1, cos: 1, sin: 0 },
       2: { c: [-6.94118, 10.03355], s: 1.02400, cos: 1.02359, sin: -0.02886 },
       3: { c: [0.25389, 9.82719], s: 0.99574, cos: 0.99521, sin: -0.03237 },
+      4: { c: [-3.59769, 0.02436], s: 1.02576, cos: 1.02551, sin: -0.02226 },
+      5: { c: [-3.34364, 9.93037], s: 1.02576, cos: 1.02551, sin: -0.02226 },
+      6: { c: [-7.06828, 5.04114], s: 1.02576, cos: 1.02551, sin: -0.02226 },
+      7: { c: [0.12694, 4.91359], s: 1.02576, cos: 1.02551, sin: -0.02226 },
     },
     frame: { cx: -3.47066, cy: 4.97737, w: 5.17810, h: 7.86548, angle: -0.01773 },
   },
@@ -1348,16 +1363,25 @@ class MarkerMap {
   }
 
   /**
-   * Called only when the map is still empty. If 2+ of a known preset's tags
+   * Called only when the map is still empty. If 3+ of a known preset's tags
    * are visible in this one frame, stage its geometry and check it actually
    * explains what was seen (reprojection error, via the same _solvePose used
    * everywhere else) before trusting it - the IDs alone aren't proof, since
    * they're reused by the plain cut-out sticker sheet for unrelated tags.
+   *
+   * The minimum is 3, not 2: a homography has 8 degrees of freedom, and 2
+   * tags supply exactly 8 point correspondences - an exactly-determined
+   * system fits ANY two quads to any other two quads with ~zero residual,
+   * whether the geometry actually matches or not, so a 2-tag check verifies
+   * nothing. 3 tags (12 points) is over-determined - real redundancy that a
+   * genuine mismatch can't satisfy. (Found by an unrelated test scenario
+   * that reused these IDs for a completely different layout and still
+   * passed a 2-tag check.)
    */
   _tryPreset(usable) {
     for (const preset of PRESET_LAYOUTS) {
       const seen = usable.filter((d) => Object.prototype.hasOwnProperty.call(preset.entries, d.id));
-      if (seen.length < 2) continue;
+      if (seen.length < 3) continue;
       const staged = new Map();
       for (const [id, e] of Object.entries(preset.entries)) {
         staged.set(Number(id), { ...e, wsum: Infinity, bad: 0, seed: true });
@@ -1540,6 +1564,11 @@ class MarkerMap {
         this.map = preset;
         known = usable.filter((d) => this.map.has(d.id));
         presetMatched = [...this.map.keys()];
+        // Every preset tag is equally "seed" (all pinned, none more
+        // canonical than another) - seedId just needs *a* valid entry so
+        // code that assumes one was picked (the Tags panel's origin label,
+        // tests) doesn't see it dangling at null forever.
+        this.seedId = presetMatched[0];
       }
     }
 
