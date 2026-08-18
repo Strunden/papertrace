@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Printable PaperTrace canvases: tags pre-placed at the four page corners,
-blank paper in between to draw on. No cutting or sticking required."""
+"""Printable PaperTrace canvases: 4 tags clustered tightly around a postcard-
+sized painting area, framed to show where the reference image lands (stretched
+to fill, corner to corner). No cutting or sticking required."""
 import json, os
 import numpy as np
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
+from reportlab.lib import colors
+from svglib.svglib import svg2rlg
+from reportlab.graphics import renderPDF
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, "build")
@@ -14,10 +18,13 @@ N = DICT["gridSize"]
 MODULES = DICT["modules"]
 CODES = DICT["codes"]
 
-MARKER_MM = 25
+MARKER_MM = 20                      # small: tags are close to the frame, not the page edge
 QUIET = MARKER_MM * 0.24
 STICKER = MARKER_MM + 2 * QUIET
-MARGIN = 10 * mm
+TAG_GAP = 5 * mm                    # frame-to-tag gap - tight cluster stays in one camera shot
+
+FRAME_W, FRAME_H = 101.6 * mm, 152.4 * mm   # 4x6in postcard, portrait
+FRAME_INSET = 4 * mm                        # sample image sits this far inside the frame rule
 
 
 def grid(code):
@@ -40,27 +47,66 @@ def draw_marker(c, code, x, y, size):
                        stroke=0, fill=1)
 
 
+def draw_frame(c, x, y, w, h):
+    """A clean double-rule border showing where the traced image goes."""
+    c.saveState()
+    c.setStrokeColorRGB(0.1, 0.1, 0.1)
+    c.setLineWidth(1.1)
+    c.rect(x, y, w, h, stroke=1, fill=0)
+    inset = 2.2 * mm
+    c.setLineWidth(0.5)
+    c.setStrokeColorRGB(0.5, 0.5, 0.5)
+    c.rect(x + inset, y + inset, w - 2 * inset, h - 2 * inset, stroke=1, fill=0)
+    c.restoreState()
+
+
+def recolor(node, gray):
+    if getattr(node, "strokeColor", None) is not None:
+        node.strokeColor = gray
+    if getattr(node, "fillColor", None) is not None:
+        node.fillColor = gray
+    for child in getattr(node, "contents", ()):
+        recolor(child, gray)
+
+
+def draw_sample_image(c, x, y, w, h):
+    """A built-in flower, stretched non-uniformly to exactly fill the frame -
+    same fit the app uses when you drop a reference image onto these tags."""
+    d = svg2rlg(os.path.join(BUILD, "flower_tulip.svg"))
+    recolor(d, colors.Color(0.72, 0.72, 0.72))
+    d.scale(w / d.width, h / d.height)
+    renderPDF.draw(d, c, x, y)
+
+
 def build(path, pagesize, label):
     w, h = pagesize
     marker = MARKER_MM * mm
     quiet = QUIET * mm
     sticker = STICKER * mm
+
+    fx = (w - FRAME_W) / 2
+    fy = (h - FRAME_H) / 2 + 4 * mm   # nudge up a hair to leave room for the footer caption
+
     c = canvas.Canvas(path, pagesize=pagesize)
     c.setTitle("PaperTrace AR canvas")
 
+    draw_sample_image(c, fx + FRAME_INSET, fy + FRAME_INSET,
+                       FRAME_W - 2 * FRAME_INSET, FRAME_H - 2 * FRAME_INSET)
+    draw_frame(c, fx, fy, FRAME_W, FRAME_H)
+
     corners = [
-        (MARGIN, h - MARGIN - sticker, CODES[0]),              # top-left
-        (w - MARGIN - sticker, h - MARGIN - sticker, CODES[1]),  # top-right
-        (MARGIN, MARGIN, CODES[2]),                             # bottom-left
-        (w - MARGIN - sticker, MARGIN, CODES[3]),               # bottom-right
+        (fx - TAG_GAP - sticker, fy + FRAME_H + TAG_GAP, CODES[0]),              # top-left
+        (fx + FRAME_W + TAG_GAP, fy + FRAME_H + TAG_GAP, CODES[1]),              # top-right
+        (fx - TAG_GAP - sticker, fy - TAG_GAP - sticker, CODES[2]),              # bottom-left
+        (fx + FRAME_W + TAG_GAP, fy - TAG_GAP - sticker, CODES[3]),              # bottom-right
     ]
     for x, y, code in corners:
         draw_marker(c, code, x + quiet, y + quiet, marker)
 
     c.setFont("Helvetica", 7)
     c.setFillColorRGB(0.6, 0.6, 0.6)
-    c.drawCentredString(w / 2, MARGIN / 2,
-                         f"PaperTrace AR canvas · {label} · tags 0-3 · draw inside the tags")
+    c.drawCentredString(w / 2, 10 * mm,
+                         f"PaperTrace AR canvas · {label} · tags 0-3 · your image stretches to fill the frame")
     c.save()
     print("wrote", path, f"({label})")
 

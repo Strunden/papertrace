@@ -103,6 +103,7 @@ html, body {
 h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: .04em;
      text-transform: uppercase; color: var(--dim); font-weight: 600; }
 h3 + p, .note { margin: -4px 0 12px; font-size: 12.5px; color: var(--dim); }
+.note a { color: var(--accent); }
 
 .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
 .chip {
@@ -295,6 +296,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       <button class="btn" id="btnReset">Reset anchors</button>
       <button class="btn" id="btnTags2">Tag sheet to print</button>
     </div>
+    <p class="note">Or skip cutting altogether - a ready-to-draw canvas with the tags already
+      placed and a postcard-sized frame in the middle:
+      <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4 PDF</a>
+      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter PDF</a>.</p>
     <label class="toggle"><input type="checkbox" id="freehand"> Freehand mode (no tags)</label>
     <p class="note">Freehand pins the image to the screen instead of the paper - handy for a quick
       look before you have printed anything, but it will drift as soon as you move the phone.</p>
@@ -339,6 +344,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       <li>Start the camera and sweep slowly across all the tags once.</li>
       <li>Pick an image, choose a trace style, drag it into place, lock it, draw.</li>
     </ol>
+    <p class="note">Nothing to cut out? Download a ready-to-draw canvas instead - tags already
+      placed close together, postcard-sized frame in the middle for your image:
+      <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4 PDF</a>
+      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter PDF</a>.</p>
     <p class="note">Nothing leaves your device. There is no account, no upload and no network
       request - the camera feed and your images are processed entirely in the browser.</p>
   </div>
@@ -443,6 +452,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       </div>
       <p class="note" style="color:#555">Every tag carries a different number. Mixing sizes is
         fine - just never put two copies of the same number in view at once.</p>
+      <p class="note" style="color:#555">Don't want to cut these out? Download a ready-to-draw
+        canvas instead - tags pre-placed, postcard-sized frame in the middle:
+        <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4 PDF</a>
+        · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter PDF</a>.</p>
     </div>
     <div class="tagwrap" id="tagwrap"></div>
   </div>
