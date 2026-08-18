@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f13">
+<meta name="description" content="Trace any picture onto real paper through your phone camera, anchored to printed tags.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>PaperTrace AR</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+
+<video id="video" playsinline muted autoplay></video>
+<canvas id="gl"></canvas>
+<canvas id="hud"></canvas>
+<div id="touch"></div>
+
+<div id="topbar">
+  <div class="pill"><span id="statusDot" class="dot"></span><span id="status">Starting</span></div>
+  <div class="spacer"></div>
+  <button class="iconbtn" id="btnFreeze" title="Freeze the frame">❙❙</button>
+  <button class="iconbtn" id="btnTorch" title="Torch" disabled>☀</button>
+  <button class="iconbtn" id="btnShot" title="Save a snapshot">⤓</button>
+  <button class="iconbtn" id="btnHelp2" title="Help">?</button>
+</div>
+
+<div id="sheet">
+  <!-- ------------------------------------------------------------ image -->
+  <div class="panel" data-panel="image">
+    <h3>Reference image</h3>
+    <div class="lib" id="lib"></div>
+    <input type="file" id="file" accept="image/*" hidden>
+    <p class="note" style="margin-top:12px">
+      Built-in flowers are vector drawings, so they stay sharp however far you zoom in.
+      Any photo or drawing you load gets the same trace styles applied.
+    </p>
+  </div>
+
+  <!-- ------------------------------------------------------------ style -->
+  <div class="panel" data-panel="style">
+    <h3>Trace style</h3>
+    <div class="chips" id="presets"></div>
+    <p class="note" id="styleHint"></p>
+
+    <div class="row"><label>Opacity</label>
+      <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
+    <div class="row"><label>Detail</label>
+      <input type="range" id="detail" min="0" max="100"><output id="detailOut"></output></div>
+    <div class="row"><label>Threshold</label>
+      <input type="range" id="threshold" min="0" max="100"><output id="thresholdOut"></output></div>
+    <div class="row"><label>Thickness</label>
+      <input type="range" id="thickness" min="0" max="100"><output id="thicknessOut"></output></div>
+
+    <h3 style="margin-top:16px">Line colour</h3>
+    <div class="chips" id="colours"></div>
+    <label class="toggle"><input type="checkbox" id="invert"> Invert lines</label>
+    <label class="toggle"><input type="checkbox" id="knock" checked> Knock out white background</label>
+  </div>
+
+  <!-- ------------------------------------------------------------ place -->
+  <div class="panel" data-panel="place">
+    <h3>Position on the paper</h3>
+    <p class="note">Drag with one finger to move. Pinch with two to resize and rotate.
+      Lock it before you start drawing so a stray touch cannot nudge it.</p>
+    <div class="btnrow">
+      <button class="btn primary" id="btnLock">Lock placement</button>
+      <button class="btn" id="btnFit">Fit to tags</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn" id="btnRotL">⟲ 5°</button>
+      <button class="btn" id="btnRotR">⟳ 5°</button>
+      <button class="btn" id="btnUpright">Upright</button>
+      <button class="btn" id="btnFlip">Mirror</button>
+    </div>
+    <p class="note" id="placeinfo"></p>
+    <label class="toggle"><input type="checkbox" id="grid"> Proportion grid</label>
+    <div class="row"><label>Grid cells</label>
+      <input type="range" id="gridN" min="2" max="8" value="3"><output id="gridNOut">3×3</output></div>
+  </div>
+
+  <!-- ------------------------------------------------------------- tags -->
+  <div class="panel" data-panel="tags">
+    <h3>Tracking anchors</h3>
+    <div class="taglist" id="taglist"></div>
+    <p class="note" id="mapinfo"></p>
+    <p class="note">
+      Sweep the phone slowly across all your tags once. The app learns where they sit
+      relative to each other, and from then on any single tag holds the overlay in place.
+      <b>Two or more tags in view is much steadier than one</b> - with a single small tag the
+      perspective has to be guessed from four corners, so the overlay wanders a little.
+    </p>
+    <div class="btnrow">
+      <button class="btn" id="btnReset">Reset anchors</button>
+      <button class="btn" id="btnTags2">Tag sheet to print</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="freehand"> Freehand mode (no tags)</label>
+    <p class="note">Freehand pins the image to the screen instead of the paper - handy for a quick
+      look before you have printed anything, but it will drift as soon as you move the phone.</p>
+  </div>
+</div>
+
+<div id="dock">
+  <button class="tab" data-tab="image">Image</button>
+  <button class="tab" data-tab="style">Style</button>
+  <button class="tab" data-tab="place">Place</button>
+  <button class="tab" data-tab="tags">Tags</button>
+</div>
+
+<div id="toast"></div>
+<div id="busy"><div class="spinner"></div></div>
+
+<!-- ====================================================== start screen -->
+<div class="screen on" id="start">
+  <div class="inner">
+    <h1>PaperTrace AR</h1>
+    <p class="lead">Hold your phone over your sketchbook and see the picture lying on the page.
+      Printed tags keep it locked to the paper while you draw.</p>
+
+    <div id="insecure" style="display:none;background:#3a2020;border:1px solid #6b3535;
+         border-radius:12px;padding:14px;margin-bottom:18px">
+      <b>The camera cannot start here.</b>
+      <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. Opening this
+      file straight from disk works in desktop Chrome but not on iPhone. See
+      <b>Getting it onto your phone</b> in Help for the one-minute fix.</p>
+    </div>
+
+    <div class="hero">
+      <button class="btn primary" id="btnStart">Start camera</button>
+      <button class="btn" id="btnTags">Tag sheet to print</button>
+      <button class="btn" id="btnHelp">How it works</button>
+    </div>
+
+    <h2>The short version</h2>
+    <ol>
+      <li>Print the tag sheet and cut out 3-6 tags.</li>
+      <li>Stick them around your drawing area, anywhere you like.</li>
+      <li>Start the camera and sweep slowly across all the tags once.</li>
+      <li>Pick an image, choose a trace style, drag it into place, lock it, draw.</li>
+    </ol>
+    <p class="note">Nothing leaves your device. There is no account, no upload and no network
+      request - the camera feed and your images are processed entirely in the browser.</p>
+  </div>
+</div>
+
+<!-- ============================================================== help -->
+<div class="screen" id="help">
+  <div class="inner">
+    <h1>How it works</h1>
+    <p class="lead">Your phone has no depth sensor it can use from a web page, so the app works
+      out where the paper is by watching printed square tags in the camera image.</p>
+
+    <h2>Why tags</h2>
+    <p>Each tag is a square of known shape. Seeing one gives the browser enough geometry to work
+      out how the paper is tilted and how far away it is, which is what lets the overlay sit
+      <i>on</i> the page in correct perspective rather than floating on the screen.</p>
+    <p>You do not have to arrange them in any pattern. Scatter them, mix sizes, put them at odd
+      angles. On the first sweep the app measures where each tag sits relative to the others and
+      builds a little map of your desk, so afterwards any single tag in view is enough.</p>
+
+    <h2>Getting steady results</h2>
+    <ul>
+      <li><b>Keep two tags in view when you can.</b> Two tags pin the perspective properly. One tag
+        leaves it to be inferred from four corners, and small measurement errors get amplified the
+        further you look from that tag, so the image drifts by a few millimetres.</li>
+      <li><b>Spread the tags around the drawing</b>, not clustered in one corner, so your hand never
+        covers all of them at once.</li>
+      <li><b>Even, diffuse light.</b> Glare on a tag hides it; hard shadow across one does too.</li>
+      <li><b>Matte paper.</b> Glossy label stock reflects and blinds the tracker.</li>
+      <li><b>Bigger tags reach further.</b> 20 mm for a sketchbook, 30 mm for A4 on a desk, 45 mm
+        for an easel.</li>
+      <li>A phone stand or clamp helps enormously - not because the tracking needs it, but because
+        your hands are then free to draw.</li>
+    </ul>
+
+    <h2>Trace styles</h2>
+    <p>Photographs are hard to trace directly, so the app converts whatever you load into
+      line work. <b>Clean lines</b> is the everyday choice. <b>Contour map</b> turns tones into
+      nested bands, which is the one to use if you are going to paint. <b>Stencil</b> gives solid
+      shapes for lettering. <b>Ghost</b> keeps the original photo, faded, for shading reference.</p>
+    <p>Detail controls how much fine texture survives, Threshold how much of the image counts as an
+      edge, and Thickness fattens the lines for bright conditions.</p>
+
+    <h2>Getting it onto your phone</h2>
+    <p>Browsers only grant camera access to pages served over <code>https://</code> (or
+      <code>localhost</code>). A file opened from your Files app does not qualify on iPhone, so
+      this page needs to be served. Any of these takes about a minute:</p>
+    <ul>
+      <li>Drag the HTML file onto <b>app.netlify.com/drop</b> - it hands you an https link
+        instantly, no account needed. Open that link on your phone.</li>
+      <li>Put it in a GitHub repository and turn on GitHub Pages.</li>
+      <li>Serve the folder from your computer and expose it with a tunnel such as
+        <code>cloudflared tunnel --url http://localhost:8000</code>.</li>
+    </ul>
+    <p>On a desktop or laptop, opening the file directly usually does work in Chrome, which is
+      handy for trying the styles out before you print anything.</p>
+
+    <h2>Privacy</h2>
+    <p>Everything runs locally in the browser. No frames, images or measurements are sent
+      anywhere, and the app makes no network requests at all once it has loaded.</p>
+
+    <div class="hero"><button class="btn primary" data-close>Back</button></div>
+  </div>
+</div>
+
+<!-- ============================================================= setup -->
+<div class="screen" id="setup">
+  <div class="inner">
+    <h1>Camera unavailable</h1>
+    <p class="lead">This page needs to be served over https:// before a browser will allow camera
+      access. It is a browser security rule, not something the app can switch off.</p>
+    <p id="setupErr" style="display:none;background:#3a2020;border:1px solid #6b3535;
+       border-radius:10px;padding:12px"></p>
+    <h2>Quickest fix</h2>
+    <p>Drag this HTML file onto <b>app.netlify.com/drop</b>. You get an https link straight away
+      with no account, and you can open that link on your phone.</p>
+    <p>You can also try again if you have just granted permission:</p>
+    <div class="hero">
+      <button class="btn primary" data-close>Back</button>
+      <button class="btn" id="btnHelp2b" onclick="document.getElementById('btnHelp').click()">Full help</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================== tag sheet -->
+<div class="screen" id="printsheet">
+  <div class="inner">
+    <div class="noprint">
+      <h1>Tracking tags</h1>
+      <p class="lead">Print at 100% scale, cut along the outside of the white border, and stick
+        3-6 of them around your drawing area. Keep the white border - the tracker needs it.</p>
+      <div class="hero">
+        <label>Tag size&nbsp;
+          <select id="tagSize" style="padding:8px;border-radius:8px">
+            <option value="20">20 mm - sketchbook</option>
+            <option value="30" selected>30 mm - A4 on a desk</option>
+            <option value="45">45 mm - easel</option>
+          </select>
+        </label>
+        <button class="btn primary" id="btnPrint">Print</button>
+        <button class="btn" data-close>Back</button>
+      </div>
+      <p class="note" style="color:#555">Every tag carries a different number. Mixing sizes is
+        fine - just never put two copies of the same number in view at once.</p>
+    </div>
+    <div class="tagwrap" id="tagwrap"></div>
+  </div>
+</div>
+
+<script>window.__DICT__=/*__DICT__*/null;window.__FLOWERS__=/*__FLOWERS__*/null;</script>
+<script>/*__JS__*/</script>
+</body>
+</html>

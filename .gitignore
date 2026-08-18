@@ -1,0 +1,14 @@
+node_modules/
+package.json
+package-lock.json
+dist/
+__pycache__/
+
+# build/ is generated, but the dictionary, the flower art and the printable
+# tag sheets are inputs to build.py - committing them keeps the build fast and
+# reproducible (regenerating the marker dictionary alone takes ~90s).
+build/*
+!build/dictionary.json
+!build/flowers.json
+!build/papertrace-markers-A4.pdf
+!build/papertrace-markers-Letter.pdf
