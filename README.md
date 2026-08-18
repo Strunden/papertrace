@@ -14,8 +14,10 @@ the page has loaded.
 | File | What it is |
 |---|---|
 | `papertrace.html` | The whole app. One self-contained file — open it or host it. |
-| `papertrace-markers-A4.pdf` | Printable tracking tags, A4, with instructions on page 1. |
+| `papertrace-markers-A4.pdf` | Printable tracking tags, A4, with instructions on page 1. Cut out and stick anywhere. |
 | `papertrace-markers-Letter.pdf` | Same, US Letter. |
+| `papertrace-canvas-A4.pdf` | Ready-to-draw page: 4 tags pre-printed in the corners, blank paper in between. Nothing to cut out. |
+| `papertrace-canvas-Letter.pdf` | Same, US Letter. |
 
 The app can also print its own tag sheet (**Tags → Tag sheet to print**), so the
 HTML file is enough on its own if you'd rather not keep the PDFs around.

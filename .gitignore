@@ -12,6 +12,11 @@ build/*
 !build/flowers.json
 !build/papertrace-markers-A4.pdf
 !build/papertrace-markers-Letter.pdf
+!build/papertrace-canvas-A4.pdf
+!build/papertrace-canvas-Letter.pdf
 
 # transport artefact from the Claude session
 papertrace-repo.tgz
+
+# local venv used to run gen_*.py (reportlab/numpy/pillow)
+.venv/
