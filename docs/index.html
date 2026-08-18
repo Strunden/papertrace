@@ -1161,6 +1161,41 @@ class MarkerDetector {
 const REF_SQUARE = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
 const UNIT_SQUARE = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
 
+/**
+ * Known-layout shortcut for the printed papertrace-canvas-*.pdf sheets
+ * (see gen_canvas.py): 4 tags at fixed relative positions around a
+ * postcard-sized frame. Ordinarily every layout is learnt from scratch by
+ * sweeping the camera, because tags can be stuck anywhere - but this one
+ * specific arrangement is known in advance, so two of its tags seen together
+ * in a single frame is enough to anchor all four instantly, no sweep needed.
+ * That matters most exactly where sweeping is hardest: a fixed desktop
+ * webcam that can never move relative to the page.
+ *
+ * These entries were not hand-derived - hand-deriving the rotation/scale
+ * convention risked a subtle, silent mismatch with however aruco.js actually
+ * assigns a marker's corner order. Instead they were measured by running the
+ * real detector + MarkerMap on an actual recording of this printed sheet and
+ * reading back the converged map (see test/replay.py) - so whatever
+ * convention the code uses, this matches it by construction.
+ *
+ * IMPORTANT: tags 0-3 are also the first four "tag N" stickers on the
+ * ordinary cut-out sheet (gen_stickers.py), which mean nothing about their
+ * arrangement. MarkerMap only trusts this preset after verifying the actual
+ * observed geometry agrees with it (see _tryPreset) - matching IDs alone is
+ * not enough.
+ */
+const PRESET_LAYOUTS = [
+  {
+    name: 'papertrace-canvas',
+    entries: {
+      0: { c: [-7.19538, 0.04873], s: 1.05265, cos: 1.05238, sin: -0.02391 },
+      1: { c: [0, 0], s: 1, cos: 1, sin: 0 },
+      2: { c: [-6.94118, 10.03355], s: 1.02400, cos: 1.02359, sin: -0.02886 },
+      3: { c: [0.25389, 9.82719], s: 0.99574, cos: 0.99521, sin: -0.03237 },
+    },
+  },
+];
+
 class MarkerMap {
   constructor(opts = {}) {
     this.maxReproj = opts.maxReproj ?? 3.0;        // px, at detection resolution
@@ -1299,6 +1334,30 @@ class MarkerMap {
       const we = this.map.get(worst.id);
       if (we && !we.seed) we.bad = (we.bad || 0) + 1;
       pool = pool.filter((k) => k !== worst);
+    }
+    return null;
+  }
+
+  /**
+   * Called only when the map is still empty. If 2+ of a known preset's tags
+   * are visible in this one frame, stage its geometry and check it actually
+   * explains what was seen (reprojection error, via the same _solvePose used
+   * everywhere else) before trusting it - the IDs alone aren't proof, since
+   * they're reused by the plain cut-out sticker sheet for unrelated tags.
+   */
+  _tryPreset(usable) {
+    for (const preset of PRESET_LAYOUTS) {
+      const seen = usable.filter((d) => Object.prototype.hasOwnProperty.call(preset.entries, d.id));
+      if (seen.length < 2) continue;
+      const staged = new Map();
+      for (const [id, e] of Object.entries(preset.entries)) {
+        staged.set(Number(id), { ...e, wsum: Infinity, bad: 0, seed: true });
+      }
+      const saved = this.map;
+      this.map = staged;
+      const pose = this._solvePose(seen);
+      this.map = saved;
+      if (pose && pose.err <= this.maxReproj) return staged;
     }
     return null;
   }
@@ -1457,6 +1516,23 @@ class MarkerMap {
   update(dets) {
     const usable = dets.filter((d) => MarkerMap.minSide(d.corners) >= 10);
     let known = usable.filter((d) => this.map.has(d.id));
+    let presetMatched = null;
+
+    // A lone single-tag seed (picked before a second tag had ever come into
+    // view) might turn out to belong to a known preset layout - upgrade to
+    // the full, verified preset the moment 2+ of its tags are seen together,
+    // rather than waiting on the much slower per-tag accumulation path
+    // below. Checked unconditionally (not just when nothing is known this
+    // frame), because the original seed tag is often still visible when the
+    // second one first appears.
+    if (this.map.size <= 1 && usable.length >= 2) {
+      const preset = this._tryPreset(usable);
+      if (preset) {
+        this.map = preset;
+        known = usable.filter((d) => this.map.has(d.id));
+        presetMatched = [...this.map.keys()];
+      }
+    }
 
     if (!known.length) {
       if (!this.map.size && usable.length) {
@@ -1551,7 +1627,10 @@ class MarkerMap {
     // the counters app.js's debug log reports. Without it "not learning" is
     // just a silent no-op and there is no way to tell a too-small tag from a
     // phone that isn't being swept from a genuinely bad detection.
-    const registered = [];
+    // A preset match anchors all four at once outside the usual per-tag
+    // growth loop below, but it should still surface through `registered` -
+    // that's what drives the "Learned tag..." toast and debug log line.
+    const registered = presetMatched ? presetMatched.slice() : [];
     const regStats = { candidates: 0, tooSmall: 0, converged: 0, noOthers: 0,
                        badFit: 0, notMoved: 0 };
     const Hinv = matInv(pose.H);
@@ -1623,7 +1702,7 @@ class MarkerMap {
 
     return { H: Hs, rawH: pose.H, quality: this.quality, tracking: true, holding: false,
              visible: usable, known: known.length, used: pose.pool.length,
-             err: pose.err, registered, dropped,
+             err: pose.err, registered, dropped, presetMatched,
              reg: { ...regStats, anchorOk, anchorSide, minRegisterSide: this.minRegisterSide,
                     keyframes: this.keyframes.length, keyframeAdded } };
   }
@@ -2377,7 +2456,10 @@ function applyDetections(dets, ms, detW, stats) {
   recordTrackStats(res);
   if (res.H) { state.pose = res.H; state.poseDetW = detW; }
   if (!res.H && !res.holding) state.pose = null;
-  if (res.registered && res.registered.length) {
+  if (res.presetMatched) {
+    toast('Recognized the printed canvas - all ' + res.presetMatched.length + ' tags anchored instantly');
+    dlog(`PRESET MATCHED ${res.presetMatched.join(',')}  (${markerMap.size} anchored, no sweep needed)`);
+  } else if (res.registered && res.registered.length) {
     toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
     dlog(`REGISTERED ${res.registered.join(',')}  (${markerMap.size} anchored)`);
   }

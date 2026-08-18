@@ -270,5 +270,50 @@ function runTrackerTests(dict) {
         `${ok}/${frames} frames tracked, worst ${worst.toFixed(2)}px, map ${mm.size}/${DESK.length}`);
   }
 
+  /* ---------------------------------------------- known-layout preset ---- */
+  // The printed papertrace-canvas-*.pdf sheet has 4 tags at a fixed, known
+  // relative arrangement (see gen_canvas.py) - MarkerMap should recognize it
+  // from a single frame and anchor all four instantly, no sweep needed. This
+  // matters most for a desktop webcam, which can never be swept at all.
+  {
+    const CANVAS = [
+      { id: 0, cx: -19.800, cy: 172.200, size: 20, angle: 0 },
+      { id: 1, cx: 121.400, cy: 172.200, size: 20, angle: 0 },
+      { id: 2, cx: -19.800, cy: -19.800, size: 20, angle: 0 },
+      { id: 3, cx: 121.400, cy: -19.800, size: 20, angle: 0 },
+    ];
+    const det = new MarkerDetector(dict);
+    const mm = new MarkerMap();
+    const Wc = 640, Hc = 640;
+    const Ht = viewHomography(Wc, Hc, 0.0002, -0.0001, 2.5, -95, -155, 0.05);
+    const gray = renderScene({ w: Wc, h: Hc, H: Ht, markers: CANVAS, dict, blur: 0.6, noise: 1.5 });
+    const res = mm.update(det.detect(gray, Wc, Hc));
+    log('known canvas layout: anchors instantly from one frame',
+        !!res.presetMatched && mm.size === 4,
+        `presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}/4, err ${res.err ? res.err.toFixed(2) : 'n/a'}px`);
+  }
+
+  // Safety net: tags 0-3 are also the first four "tag N" stickers on the
+  // ordinary cut-out sheet, which mean nothing about their arrangement.
+  // Seeing IDs 0-3 scattered in some UNRELATED layout must never trigger the
+  // canvas preset - that would silently seed a completely wrong map.
+  {
+    const SCATTERED = [
+      { id: 0, cx: 0, cy: 0, size: 90, angle: 0.1 },
+      { id: 1, cx: 300, cy: -60, size: 70, angle: 0.9 },
+      { id: 2, cx: -250, cy: 180, size: 60, angle: -0.4 },
+      { id: 3, cx: 180, cy: 220, size: 80, angle: 1.6 },
+    ];
+    const det = new MarkerDetector(dict);
+    const mm = new MarkerMap();
+    const Wc = 640, Hc = 640;
+    const Ht = viewHomography(Wc, Hc, 0.0002, -0.0001, 0.85, 0, -20, 0.05);
+    const dets = det.detect(renderScene({ w: Wc, h: Hc, H: Ht, markers: SCATTERED, dict, blur: 0.6, noise: 1.5 }), Wc, Hc);
+    const res = mm.update(dets);
+    log('unrelated tags sharing IDs 0-3: preset does NOT falsely trigger',
+        !res.presetMatched && mm.size <= 1,
+        `visible=${dets.map((d) => d.id)}, presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}`);
+  }
+
   return results;
 }

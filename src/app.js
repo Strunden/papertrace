@@ -407,7 +407,10 @@ function applyDetections(dets, ms, detW, stats) {
   recordTrackStats(res);
   if (res.H) { state.pose = res.H; state.poseDetW = detW; }
   if (!res.H && !res.holding) state.pose = null;
-  if (res.registered && res.registered.length) {
+  if (res.presetMatched) {
+    toast('Recognized the printed canvas - all ' + res.presetMatched.length + ' tags anchored instantly');
+    dlog(`PRESET MATCHED ${res.presetMatched.join(',')}  (${markerMap.size} anchored, no sweep needed)`);
+  } else if (res.registered && res.registered.length) {
     toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
     dlog(`REGISTERED ${res.registered.join(',')}  (${markerMap.size} anchored)`);
   }
