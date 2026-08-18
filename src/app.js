@@ -292,6 +292,67 @@ async function startCameraInner() {
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
      + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
+  enableGyroCoasting();
+}
+
+/* --------------------------------------------------------- gyro coasting */
+// Vision-only tracking freezes the pose exactly in place during a brief
+// motion-blur dropout (see the debug-log work earlier - up to ~2s gaps on a
+// real recording). Real IMU fusion (what ARKit does) instead coasts the pose
+// using device rotation, which stays informative far longer than
+// double-integrated accelerometer position would (that drifts almost
+// immediately and isn't used here). This is a hand-rolled, rotation-only
+// approximation: gyro can't tell us how the phone translated, only how it
+// turned, so it softens "frozen at a stale angle" without pretending to
+// replace vision. Resets to zero the instant vision reacquires a real pose,
+// so drift never compounds across gaps.
+let gyroReady = false;
+let lastGyroT = null;
+state.gyroRollDelta = 0;
+
+function onDeviceMotion(e) {
+  const now = performance.now();
+  const dt = lastGyroT == null ? 0 : (now - lastGyroT) / 1000;
+  lastGyroT = now;
+  // alpha = rotation rate (deg/s) about the axis pointing out of the screen -
+  // for a phone held camera-down over paper, that's the same axis the
+  // camera's image itself rotates about, i.e. in-plane image rotation.
+  const rate = e.rotationRate && e.rotationRate.alpha;
+  if (dt > 0 && dt < 0.5 && typeof rate === 'number' && isFinite(rate)) {
+    state.gyroRollDelta += rate * dt * Math.PI / 180;
+  }
+}
+
+async function enableGyroCoasting() {
+  if (gyroReady) return;
+  try {
+    if (typeof DeviceMotionEvent === 'undefined') return;
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      const perm = await DeviceMotionEvent.requestPermission();
+      if (perm !== 'granted') { dlog('gyro coasting: motion permission denied'); return; }
+    }
+    window.addEventListener('devicemotion', onDeviceMotion);
+    gyroReady = true;
+    dlog('gyro coasting: enabled');
+  } catch (e) {
+    dlog('gyro coasting: unavailable (' + e + ')');
+  }
+}
+
+/** Rotates a paper->image homography's output about its own on-screen
+ * centre - used to nudge a held pose along with the phone's own rotation
+ * instead of leaving it perfectly static. */
+function rotateAboutCenter(H, deltaRad) {
+  const quad = REF_SQUARE.map((p) => matApply(H, p[0], p[1]));
+  let cx = 0, cy = 0;
+  for (const p of quad) { cx += p[0] / 4; cy += p[1] / 4; }
+  const c = Math.cos(deltaRad), s = Math.sin(deltaRad);
+  const R = new Float64Array([
+    c, -s, cx - c * cx + s * cy,
+    s, c, cy - s * cx - c * cy,
+    0, 0, 1,
+  ]);
+  return matMul(R, H);
 }
 
 let wakeLock = null;
@@ -410,7 +471,17 @@ function applyDetections(dets, ms, detW, stats) {
 
   state.lastResult = res;
   recordTrackStats(res);
-  if (res.H) { state.pose = res.H; state.poseDetW = detW; }
+  if (res.H) {
+    if (res.tracking) {
+      state.pose = res.H;
+      state.gyroRollDelta = 0;   // fresh vision pose - any drift since is stale, drop it
+    } else if (gyroReady && res.holding) {
+      state.pose = rotateAboutCenter(res.H, state.gyroRollDelta);
+    } else {
+      state.pose = res.H;
+    }
+    state.poseDetW = detW;
+  }
   if (!res.H && !res.holding) state.pose = null;
   if (res.presetMatched) {
     toast('Recognized the printed canvas - all ' + res.presetMatched.length + ' tags anchored instantly');
