@@ -24,7 +24,14 @@ const UNIT_SQUARE = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
 class MarkerMap {
   constructor(opts = {}) {
     this.maxReproj = opts.maxReproj ?? 3.0;        // px, at detection resolution
-    this.holdFrames = opts.holdFrames ?? 10;
+    // Detection now runs off-thread at ~60-70fps on a real phone (see
+    // app.js's Worker offload), so a hold window sized in frames buys much
+    // less real time than it used to - 10 frames is only ~140ms, thinner
+    // than a typical motion-blur recovery gap during a normal sweep. 18
+    // frames (~250-280ms at that rate) rides out short blur bursts without
+    // holding a stale pose long enough to visibly drift if the phone really
+    // moved during the gap.
+    this.holdFrames = opts.holdFrames ?? 18;
     this.minRegisterSide = opts.minRegisterSide ?? 26;
     this.convergedWeight = opts.convergedWeight ?? 12;
     this.minSamples = opts.minSamples ?? 2;

@@ -311,11 +311,16 @@ function dlog(msg) {
 }
 
 function saveDebugLog() {
+  const t = trackStats;
   const header = [
     `PaperTrace debug log - ${new Date().toISOString()}`,
     `UA: ${navigator.userAgent}`,
     `worker: ${!!detWorker}  requestVideoFrameCallback: ${useVFC}`,
     `detW: ${state.detW}  markers anchored: ${markerMap.size}`,
+    `pose continuity: tracking=${t.frames ? (100 * t.tracking / t.frames).toFixed(0) : 0}% `
+      + `holding=${t.frames ? (100 * t.holding / t.frames).toFixed(0) : 0}% `
+      + `overlay-gone=${t.frames ? (100 * t.nullPose / t.frames).toFixed(0) : 0}%  `
+      + `longest overlay-gone streak: ${t.maxNullMs.toFixed(0)}ms`,
     '',
   ].join('\n');
   const blob = new Blob([header + dbgLog.join('\n') + '\n'], { type: 'text/plain' });
@@ -364,11 +369,37 @@ function logDetectionSummary(stats) {
   dlog(parts.join('  ·  '));
 }
 
+// Precise pose-continuity accounting, cheap enough to run every frame - the
+// 1Hz debug summary samples too coarsely to tell "briefly flickered" from
+// "the overlay was actually gone for a second". `nullMs` is what the user
+// feels as the overlay vanishing; `holdMs` is a frozen-but-present overlay,
+// which is far less jarring even though the map "lost" the tag either way.
+const trackStats = { frames: 0, tracking: 0, holding: 0, nullPose: 0,
+                     curNullMs: 0, maxNullMs: 0, lastT: null };
+function recordTrackStats(res) {
+  const now = performance.now();
+  const dt = trackStats.lastT == null ? 0 : now - trackStats.lastT;
+  trackStats.lastT = now;
+  trackStats.frames++;
+  if (res.tracking) {
+    trackStats.tracking++;
+    trackStats.curNullMs = 0;
+  } else if (res.holding) {
+    trackStats.holding++;
+    trackStats.curNullMs = 0;
+  } else {
+    trackStats.nullPose++;
+    trackStats.curNullMs += dt;
+    trackStats.maxNullMs = Math.max(trackStats.maxNullMs, trackStats.curNullMs);
+  }
+}
+
 function applyDetections(dets, ms, detW, stats) {
   const res = markerMap.update(dets);
   state.detectMs = state.detectMs * 0.85 + ms * 0.15;
 
   state.lastResult = res;
+  recordTrackStats(res);
   if (res.H) { state.pose = res.H; state.poseDetW = detW; }
   if (!res.H && !res.holding) state.pose = null;
   if (res.registered && res.registered.length) {

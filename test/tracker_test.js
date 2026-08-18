@@ -228,7 +228,7 @@ function runTrackerTests(dict) {
     for (let i = 0; i < 25; i++) {
       if (mm.update([]).H) heldFor++; else { finallyLost = true; break; }
     }
-    log('hold-then-lose when tags disappear', heldFor >= 8 && heldFor <= 12 && finallyLost,
+    log('hold-then-lose when tags disappear', heldFor >= 16 && heldFor <= 20 && finallyLost,
         `held ${heldFor} frames, then lost=${finallyLost}`);
   }
   {

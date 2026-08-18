@@ -100,6 +100,7 @@ def main():
 
             log = page.evaluate("() => dbgLog.join('\\n')")
             anchored = page.evaluate("() => markerMap.size")
+            track = page.evaluate("() => trackStats")
             shot_path = os.path.join(HERE, "_replay_last_frame.png")
             page.screenshot(path=shot_path)
             browser.close()
@@ -115,6 +116,12 @@ def main():
     print(log)
     print()
     print(f"{anchored} tag(s) anchored by end of playback.")
+    if track["frames"]:
+        pct = lambda n: 100 * n / track["frames"]
+        print(f"pose continuity over {track['frames']} frames: "
+              f"tracking={pct(track['tracking']):.0f}%  holding={pct(track['holding']):.0f}%  "
+              f"overlay-gone={pct(track['nullPose']):.0f}%")
+        print(f"longest overlay-gone streak: {track['maxNullMs']:.0f}ms")
     print(f"full log:   {log_path}")
     print(f"last frame: {shot_path}")
 
