@@ -43,6 +43,14 @@ const UNIT_SQUARE = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
  * arrangement. MarkerMap only trusts this preset after verifying the actual
  * observed geometry agrees with it (see _tryPreset) - matching IDs alone is
  * not enough.
+ *
+ * `frame` is the printed frame rectangle's own position in this same
+ * coordinate system - not measured directly (there's no fiducial pattern to
+ * detect on a blank frame), but derived by fitting the exact affine map
+ * between the tags' real physical mm centres (gen_canvas.py) and their
+ * measured paper-unit centres above, then applying that fit to the frame's
+ * real mm corners. app.js uses this to place the loaded image exactly in the
+ * frame instead of guessing from the tags' bounding box.
  */
 const PRESET_LAYOUTS = [
   {
@@ -53,6 +61,7 @@ const PRESET_LAYOUTS = [
       2: { c: [-6.94118, 10.03355], s: 1.02400, cos: 1.02359, sin: -0.02886 },
       3: { c: [0.25389, 9.82719], s: 0.99574, cos: 0.99521, sin: -0.03237 },
     },
+    frame: { cx: -3.47066, cy: 4.97737, w: 5.17810, h: 7.86548, angle: -0.01773 },
   },
 ];
 

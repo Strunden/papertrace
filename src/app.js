@@ -26,7 +26,8 @@ const state = {
   opacity: 0.85,
   style: { preset: 'clean', detail: 0.5, threshold: 0.5, thickness: 0.15,
            invert: false, knockWhite: true, colour: [16, 16, 20] },
-  place: { x: 0, y: 0, scale: 3, angle: 0, flip: false },
+  place: { x: 0, y: 0, scale: 3, scaleY: null, angle: 0, flip: false },
+  presetFrame: null,
   placed: false,
   userPlaced: false,
   fitSig: '',
@@ -216,7 +217,11 @@ function paperToCss() {
 function rectMatrix() {
   const p = state.place;
   const W = p.scale * (p.flip ? -1 : 1);
-  const Hh = p.scale / state.aspect;
+  // scaleY, when set, stretches independently of the loaded image's own
+  // aspect ratio - used to fill a known printed frame exactly (see
+  // state.presetFrame) regardless of what picture is loaded into it.
+  // Ignoring the picture's aspect ratio otherwise, height tracks width.
+  const Hh = p.scaleY != null ? p.scaleY : p.scale / state.aspect;
   const c = Math.cos(p.angle), s = Math.sin(p.angle);
   return new Float64Array([
     c * W, -s * Hh, p.x - 0.5 * (c * W - s * Hh),
@@ -410,6 +415,9 @@ function applyDetections(dets, ms, detW, stats) {
   if (res.presetMatched) {
     toast('Recognized the printed canvas - all ' + res.presetMatched.length + ' tags anchored instantly');
     dlog(`PRESET MATCHED ${res.presetMatched.join(',')}  (${markerMap.size} anchored, no sweep needed)`);
+    const preset = PRESET_LAYOUTS.find((p) => p.frame
+      && res.presetMatched.every((id) => Object.prototype.hasOwnProperty.call(p.entries, id)));
+    if (preset) state.presetFrame = preset.frame;
   } else if (res.registered && res.registered.length) {
     toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
     dlog(`REGISTERED ${res.registered.join(',')}  (${markerMap.size} anchored)`);
@@ -430,7 +438,11 @@ function applyDetections(dets, ms, detW, stats) {
 
   if (state.pose && !state.userPlaced) {
     const sig = markerMap.size + ':' + state.aspect.toFixed(3);
-    if (sig !== state.fitSig) { state.fitSig = sig; fitToTags(); state.placed = true; }
+    if (sig !== state.fitSig) {
+      state.fitSig = sig;
+      if (state.presetFrame) fitToFrame(state.presetFrame); else fitToTags();
+      state.placed = true;
+    }
   }
 }
 
@@ -672,13 +684,27 @@ function tagBounds() {
 function fitToTags() {
   const b = tagBounds();
   if (!b) {
-    Object.assign(state.place, { x: 0, y: 0, scale: 3, angle: 0 });
+    Object.assign(state.place, { x: 0, y: 0, scale: 3, scaleY: null, angle: 0 });
   } else if (b.n === 1) {
-    Object.assign(state.place, { x: b.cx, y: b.cy + b.h * 1.6, scale: Math.max(2.5, b.w * 3) });
+    Object.assign(state.place, { x: b.cx, y: b.cy + b.h * 1.6, scale: Math.max(2.5, b.w * 3), scaleY: null });
   } else {
     const fit = Math.min(b.w, b.h * state.aspect) * 0.92;
-    Object.assign(state.place, { x: b.cx, y: b.cy, scale: Math.max(1, fit) });
+    Object.assign(state.place, { x: b.cx, y: b.cy, scale: Math.max(1, fit), scaleY: null });
   }
+  updatePlaceInfo();
+}
+
+/**
+ * Places the loaded image to exactly fill a known printed frame (see
+ * state.presetFrame), stretched to the frame's own shape rather than
+ * letterboxed to the image's aspect ratio - the frame is the whole point of
+ * the printed canvas sheet, so whatever picture is loaded should fill it
+ * exactly, not just roughly overlap it.
+ */
+function fitToFrame(frame) {
+  Object.assign(state.place, {
+    x: frame.cx, y: frame.cy, scale: frame.w, scaleY: frame.h, angle: frame.angle, flip: false,
+  });
   updatePlaceInfo();
 }
 
@@ -742,6 +768,10 @@ function applyGesture() {
     next.x = m1.x + (vx * c - vy * s) * k;
     next.y = m1.y + (vx * s + vy * c) * k;
     next.scale = Math.min(200, Math.max(0.05, g.place.scale * k));
+    // Scale height by the same factor so a pinch resizes the whole placed
+    // rectangle uniformly, keeping whatever proportions it already had -
+    // including a frame's stretched (non-aspect-locked) shape.
+    next.scaleY = g.place.scaleY != null ? g.place.scaleY * k : null;
     next.angle = g.place.angle + rot;
   }
   if (!isFinite(next.x) || !isFinite(next.y) || !isFinite(next.scale) || !isFinite(next.angle)) return;
@@ -1045,7 +1075,9 @@ function wire() {
     toast(state.locked ? 'Placement locked - drag disabled' : 'Drag to move, pinch to size and rotate');
   });
   $('btnFit').addEventListener('click', () => {
-    state.userPlaced = false; state.fitSig = ''; fitToTags(); toast('Fitted to your tags');
+    state.userPlaced = false; state.fitSig = '';
+    if (state.presetFrame) fitToFrame(state.presetFrame); else fitToTags();
+    toast(state.presetFrame ? 'Fitted to the printed frame' : 'Fitted to your tags');
   });
   $('btnFlip').addEventListener('click', () => { state.userPlaced = true; state.place.flip = !state.place.flip; updatePlaceInfo(); });
   $('btnRotL').addEventListener('click', () => { state.userPlaced = true; state.place.angle -= Math.PI / 36; updatePlaceInfo(); });
@@ -1054,6 +1086,7 @@ function wire() {
   $('btnReset').addEventListener('click', () => {
     markerMap.reset();
     state.pose = null; state.placed = false; state.userPlaced = false; state.fitSig = '';
+    state.presetFrame = null;
     toast('Anchors cleared - sweep across your tags again');
   });
 
