@@ -279,6 +279,9 @@ async function startCameraInner() {
   requestWakeLock();
   loop();
   toast('Point the camera at your tags and sweep across them once');
+  const settings = track.getSettings ? track.getSettings() : {};
+  dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
+     + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
 }
 
 let wakeLock = null;
@@ -291,6 +294,39 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.running) requestWakeLock();
 });
 
+/* -------------------------------------------------------------- debug log */
+// A local, in-memory flight recorder for "why isn't this tracking" reports.
+// Nothing here leaves the device except when the user taps Save debug log -
+// it also mirrors to console.debug for anyone who plugs the phone into a Mac
+// and opens it in Safari's Develop > [device] remote inspector.
+const DBG_MAX = 4000;
+const dbgLog = [];
+const dbgStart = performance.now();
+function dlog(msg) {
+  const t = ((performance.now() - dbgStart) / 1000).toFixed(2);
+  const line = `[${t}s] ${msg}`;
+  dbgLog.push(line);
+  if (dbgLog.length > DBG_MAX) dbgLog.shift();
+  console.debug('papertrace:', line);
+}
+
+function saveDebugLog() {
+  const header = [
+    `PaperTrace debug log - ${new Date().toISOString()}`,
+    `UA: ${navigator.userAgent}`,
+    `worker: ${!!detWorker}  requestVideoFrameCallback: ${useVFC}`,
+    `detW: ${state.detW}  markers anchored: ${markerMap.size}`,
+    '',
+  ].join('\n');
+  const blob = new Blob([header + dbgLog.join('\n') + '\n'], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'papertrace-debug.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Saved debug log');
+}
+
 /* ------------------------------------------------------------ detection */
 // Detection is the one per-frame step expensive enough to jank the display -
 // adaptive thresholding and contour tracing over a few hundred thousand
@@ -302,7 +338,33 @@ const detCanvas = document.createElement('canvas');
 const detCtx = detCanvas.getContext('2d', { willReadFrequently: true });
 let grayBuf = null;
 
-function applyDetections(dets, ms, detW) {
+let lastDbgSummary = 0;
+function logDetectionSummary(stats) {
+  const now = performance.now();
+  if (now - lastDbgSummary < 1000) return;
+  lastDbgSummary = now;
+  const res = state.lastResult;
+  if (!res) return;
+  const vis = (res.visible || []).map((d) => d.id).join(',') || '-';
+  const parts = [
+    `visible=[${vis}]`,
+    `known=${res.known ?? 0}/${markerMap.size}`,
+    `detW=${state.detW} detectMs=${state.detectMs.toFixed(1)} fps=${state.fps.toFixed(0)}`,
+  ];
+  if (stats) {
+    parts.push(`raw: contours=${stats.contours} quads=${stats.contours - stats.notQuad - stats.notConvex} `
+      + `decoded=${stats.ok} noMatch=${stats.noMatch} badBits=${stats.badBits} tooSmall=${stats.tooSmall}`);
+  }
+  if (res.reg) {
+    const r = res.reg;
+    parts.push(`reg: anchorSide=${r.anchorSide.toFixed(0)}px(need ${r.minRegisterSide}) anchorOk=${r.anchorOk} `
+      + `cand=${r.candidates} tooSmall=${r.tooSmall} notMoved=${r.notMoved} badFit=${r.badFit} `
+      + `converged=${r.converged} keyframes=${r.keyframes}`);
+  }
+  dlog(parts.join('  ·  '));
+}
+
+function applyDetections(dets, ms, detW, stats) {
   const res = markerMap.update(dets);
   state.detectMs = state.detectMs * 0.85 + ms * 0.15;
 
@@ -311,7 +373,12 @@ function applyDetections(dets, ms, detW) {
   if (!res.H && !res.holding) state.pose = null;
   if (res.registered && res.registered.length) {
     toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
+    dlog(`REGISTERED ${res.registered.join(',')}  (${markerMap.size} anchored)`);
   }
+  if (res.dropped && res.dropped.length) {
+    dlog(`DROPPED ${res.dropped.join(',')}  - kept disagreeing with the rest of the map, will relearn`);
+  }
+  logDetectionSummary(stats);
   // Until the user positions the image themselves, keep re-fitting as the map
   // grows - the first fit happens off one tag and is necessarily a guess.
   // Trade resolution for speed to stay inside a frame budget - but only after
@@ -338,7 +405,7 @@ function detectFrameSync(target, dh) {
   const t0 = performance.now();
   const dets = detector.detect(g, target, dh);
   const ms = performance.now() - t0;
-  applyDetections(dets, ms, target);
+  applyDetections(dets, ms, target, detector.stats);
 }
 
 /* ---- worker offload, with a same-thread fallback if it's unavailable --- */
@@ -349,9 +416,12 @@ try {
     detWorker = new Worker(blobUrl);
     detWorker.onmessage = (e) => {
       workerBusy = false;
-      applyDetections(e.data.dets, e.data.ms, e.data.w);
+      applyDetections(e.data.dets, e.data.ms, e.data.w, e.data.stats);
     };
-    detWorker.onerror = () => { workerBusy = false; detWorker = null; };
+    detWorker.onerror = (e) => {
+      workerBusy = false; detWorker = null;
+      dlog('worker error, falling back to main-thread detection: ' + (e.message || e));
+    };
   }
 } catch (e) { detWorker = null; }
 
@@ -976,6 +1046,7 @@ function wire() {
   $('btnTags2').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
   $('tagSize').addEventListener('change', buildPrintSheet);
   $('btnPrint').addEventListener('click', () => window.print());
+  $('btnDebugLog').addEventListener('click', saveDebugLog);
 }
 
 /* ------------------------------------------------------------------ boot */

@@ -400,28 +400,36 @@ class MarkerMap {
     this.quality = 1 / (1 + pose.err);
 
     // ------------------------------------------- grow and refine the map ----
+    // regStats explains *why* a candidate didn't register, frame by frame -
+    // the counters app.js's debug log reports. Without it "not learning" is
+    // just a silent no-op and there is no way to tell a too-small tag from a
+    // phone that isn't being swept from a genuinely bad detection.
     const registered = [];
+    const regStats = { candidates: 0, tooSmall: 0, converged: 0, noOthers: 0,
+                       badFit: 0, notMoved: 0 };
     const Hinv = matInv(pose.H);
     let anchorSide = 0;
     for (const k of known) anchorSide = Math.max(anchorSide, MarkerMap.minSide(k.corners));
+    const anchorOk = !!Hinv && pose.err <= this.maxReproj && anchorSide >= this.minRegisterSide;
 
-    if (Hinv && pose.err <= this.maxReproj && anchorSide >= this.minRegisterSide) {
+    if (anchorOk) {
       for (const d of usable) {
-        if (MarkerMap.minSide(d.corners) < this.minRegisterSide) continue;
+        regStats.candidates++;
+        if (MarkerMap.minSide(d.corners) < this.minRegisterSide) { regStats.tooSmall++; continue; }
         const entry = this.map.get(d.id);
-        if (entry && (entry.seed || entry.wsum >= this.convergedWeight)) continue;
+        if (entry && (entry.seed || entry.wsum >= this.convergedWeight)) { regStats.converged++; continue; }
 
         // Always exclude the tag itself from the pose used to place it. Fitting
         // through a pose that already contains the tag simply hands back the
         // value we started with, so a bad early estimate could never correct.
         const others = known.filter((k) => k.id !== d.id);
-        if (!others.length) continue;
+        if (!others.length) { regStats.noOthers++; continue; }
         const fit = this._estimateFromFrame(d, others);
-        if (!fit || fit.resid > 0.14 || fit.w < 0.004) continue;
+        if (!fit || fit.resid > 0.14 || fit.w < 0.004) { regStats.badFit++; continue; }
 
         if (!entry) {
           const p = this.pending.get(d.id);
-          if (!MarkerMap._viewMoved(p && p.lastView, proj, 5)) continue;
+          if (!MarkerMap._viewMoved(p && p.lastView, proj, 5)) { regStats.notMoved++; continue; }
           const acc = this._accumulate(d.id, fit, fit.w);
           acc.lastView = proj;
           if (acc.n >= this.minSamples && MarkerMap._pendingSane(acc)) {
@@ -431,7 +439,7 @@ class MarkerMap {
             registered.push(d.id);
           }
         } else {
-          if (!MarkerMap._viewMoved(entry.lastView, proj, 5)) continue;
+          if (!MarkerMap._viewMoved(entry.lastView, proj, 5)) { regStats.notMoved++; continue; }
           // Weighted running mean: a confident observation can overwrite an
           // early, badly-conditioned guess rather than slowly nudging it.
           const a = fit.w / (entry.wsum + fit.w);
@@ -446,10 +454,11 @@ class MarkerMap {
       }
     }
 
+    let keyframeAdded = false;
     if (pose.err <= this.maxReproj) {
-      const added = this._considerKeyframe(usable, proj);
-      if (added) this.sinceRefine++;
-      if (registered.length || (added && this.sinceRefine >= 3)) {
+      keyframeAdded = this._considerKeyframe(usable, proj);
+      if (keyframeAdded) this.sinceRefine++;
+      if (registered.length || (keyframeAdded && this.sinceRefine >= 3)) {
         this.refineFromKeyframes(registered.length ? 6 : 3);
         this.sinceRefine = 0;
       }
@@ -457,13 +466,18 @@ class MarkerMap {
 
     // A tag whose stored position keeps disagreeing with everyone else is
     // worse than no tag at all - drop it and let it be learnt again.
+    const dropped = [];
     for (const k of known) {
       const e = this.map.get(k.id);
-      if (e && !e.seed && e.bad > this.maxBad) { this.map.delete(k.id); this.pending.delete(k.id); }
+      if (e && !e.seed && e.bad > this.maxBad) {
+        this.map.delete(k.id); this.pending.delete(k.id); dropped.push(k.id);
+      }
     }
 
     return { H: Hs, rawH: pose.H, quality: this.quality, tracking: true, holding: false,
              visible: usable, known: known.length, used: pose.pool.length,
-             err: pose.err, registered };
+             err: pose.err, registered, dropped,
+             reg: { ...regStats, anchorOk, anchorSide, minRegisterSide: this.minRegisterSide,
+                    keyframes: this.keyframes.length, keyframeAdded } };
   }
 }

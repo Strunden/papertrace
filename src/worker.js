@@ -32,5 +32,5 @@ self.onmessage = (e) => {
   const t0 = performance.now();
   const dets = detector.detect(gray, w, h);
   const ms = performance.now() - t0;
-  self.postMessage({ dets, ms, w, h });
+  self.postMessage({ dets, ms, w, h, stats: detector.stats });
 };
