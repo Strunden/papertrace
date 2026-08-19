@@ -358,7 +358,7 @@ body.tracing .notTracing { display: none; }
 #howAnim { display: block; margin: 6px auto 2px; width: min(78vw, 300px); }
 #howAnim .mark { animation: markPulse 5.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
 #howAnim .appear { opacity: 0; animation: artAppear 5.6s ease-in-out infinite; }
-#howAnim .stroke { stroke-dasharray: 42; stroke-dashoffset: 42;
+#howAnim .stroke { stroke-dasharray: 52; stroke-dashoffset: 52;
   animation: strokeDraw 5.6s ease-in-out infinite; }
 #howAnim .pencil { opacity: 0; animation: pencilMove 5.6s ease-in-out infinite; }
 #howAnim .phone { animation: phoneDrift 5.6s ease-in-out infinite; }
@@ -370,8 +370,8 @@ body.tracing .notTracing { display: none; }
   0%, 20% { opacity: 0; } 32%, 92% { opacity: 1; } 100% { opacity: 0; }
 }
 @keyframes strokeDraw {
-  0%, 38% { stroke-dashoffset: 42; } 78%, 92% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: 42; }
+  0%, 38% { stroke-dashoffset: 52; } 78%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 52; }
 }
 @keyframes pencilMove {
   0%, 34% { opacity: 0; transform: translate(0, 0); }
@@ -385,8 +385,21 @@ body.tracing .notTracing { display: none; }
   16%, 88% { transform: translate(0, 0) rotate(0deg); }
   100% { transform: translate(-8px, 4px) rotate(-2deg); }
 }
+/* captions narrate the same 5.6s loop the animation runs */
+#howCaption { position: relative; height: 2.6em; margin: 4px 0 14px;
+  font-size: 15px; line-height: 1.4; color: #6f695c; }
+#howCaption .cap { position: absolute; left: 0; right: 0; top: 0; opacity: 0; }
+#howCaption .c1 { animation: cap1 5.6s ease-in-out infinite; }
+#howCaption .c2 { animation: cap2 5.6s ease-in-out infinite; }
+#howCaption .c3 { animation: cap3 5.6s ease-in-out infinite; }
+@keyframes cap1 { 0%, 26% { opacity: 1; } 30%, 96% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes cap2 { 0%, 26% { opacity: 0; } 30%, 56% { opacity: 1; } 60%, 100% { opacity: 0; } }
+@keyframes cap3 { 0%, 56% { opacity: 0; } 60%, 92% { opacity: 1; } 96%, 100% { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
   #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .pencil, #howAnim .phone {
     animation: none; opacity: 1; stroke-dashoffset: 0;
   }
+  #howCaption { height: auto; }
+  #howCaption .cap { position: static; display: block; opacity: 1; animation: none; }
 }

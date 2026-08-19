@@ -368,7 +368,7 @@ body.tracing .notTracing { display: none; }
 #howAnim { display: block; margin: 6px auto 2px; width: min(78vw, 300px); }
 #howAnim .mark { animation: markPulse 5.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
 #howAnim .appear { opacity: 0; animation: artAppear 5.6s ease-in-out infinite; }
-#howAnim .stroke { stroke-dasharray: 42; stroke-dashoffset: 42;
+#howAnim .stroke { stroke-dasharray: 52; stroke-dashoffset: 52;
   animation: strokeDraw 5.6s ease-in-out infinite; }
 #howAnim .pencil { opacity: 0; animation: pencilMove 5.6s ease-in-out infinite; }
 #howAnim .phone { animation: phoneDrift 5.6s ease-in-out infinite; }
@@ -380,8 +380,8 @@ body.tracing .notTracing { display: none; }
   0%, 20% { opacity: 0; } 32%, 92% { opacity: 1; } 100% { opacity: 0; }
 }
 @keyframes strokeDraw {
-  0%, 38% { stroke-dashoffset: 42; } 78%, 92% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: 42; }
+  0%, 38% { stroke-dashoffset: 52; } 78%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 52; }
 }
 @keyframes pencilMove {
   0%, 34% { opacity: 0; transform: translate(0, 0); }
@@ -395,10 +395,23 @@ body.tracing .notTracing { display: none; }
   16%, 88% { transform: translate(0, 0) rotate(0deg); }
   100% { transform: translate(-8px, 4px) rotate(-2deg); }
 }
+/* captions narrate the same 5.6s loop the animation runs */
+#howCaption { position: relative; height: 2.6em; margin: 4px 0 14px;
+  font-size: 15px; line-height: 1.4; color: #6f695c; }
+#howCaption .cap { position: absolute; left: 0; right: 0; top: 0; opacity: 0; }
+#howCaption .c1 { animation: cap1 5.6s ease-in-out infinite; }
+#howCaption .c2 { animation: cap2 5.6s ease-in-out infinite; }
+#howCaption .c3 { animation: cap3 5.6s ease-in-out infinite; }
+@keyframes cap1 { 0%, 26% { opacity: 1; } 30%, 96% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes cap2 { 0%, 26% { opacity: 0; } 30%, 56% { opacity: 1; } 60%, 100% { opacity: 0; } }
+@keyframes cap3 { 0%, 56% { opacity: 0; } 60%, 92% { opacity: 1; } 96%, 100% { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
   #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .pencil, #howAnim .phone {
     animation: none; opacity: 1; stroke-dashoffset: 0;
   }
+  #howCaption { height: auto; }
+  #howCaption .cap { position: static; display: block; opacity: 1; animation: none; }
 }
 </style>
 </head>
@@ -518,13 +531,19 @@ body.tracing .notTracing { display: none; }
 <div class="screen paper" id="printstep">
   <div class="inner">
     <h1>Print the sheet</h1>
-    <p class="lead">One A4 page with tracking marks.<br>
-      Your picture appears inside its frame.</p>
 
-    <svg id="howAnim" viewBox="0 0 300 210" aria-hidden="true">
+    <svg id="howAnim" viewBox="0 -18 300 228" aria-hidden="true">
       <defs>
-        <clipPath id="phoneScreen"><rect x="89" y="42" width="90" height="138" rx="4"/></clipPath>
+        <clipPath id="phoneScreen"><rect x="97" y="42" width="90" height="138" rx="4"/></clipPath>
       </defs>
+
+      <!-- what is what -->
+      <g font-family="-apple-system, sans-serif" font-size="10.5" fill="#6f695c">
+        <text x="30" y="-6">printed sheet</text>
+        <path d="M52 -2 C 52 6, 48 10, 44 16" fill="none" stroke="#a29a88" stroke-width="1"/>
+        <text x="242" y="-6">phone</text>
+        <path d="M254 -2 C 252 8, 230 18, 204 34" fill="none" stroke="#a29a88" stroke-width="1"/>
+      </g>
 
       <!-- the real world: the printed sheet, empty except marks + frame -->
       <g>
@@ -546,22 +565,29 @@ body.tracing .notTracing { display: none; }
 
       <!-- the pencil traces the petal that pokes out of the window - the
            paper stroke continues the on-screen guide across the edge -->
-      <path class="stroke" d="M89 95.9 C 80 96.4, 74.6 98, 74.5 100 C 74.6 102, 80 103.6, 89 104.1"
+      <path class="stroke" d="M96 96.2 C 83 95.6, 74.6 97.6, 74.4 100 C 74.6 102.4, 83 104.4, 96 103.8"
             stroke="#26221b" stroke-width="2" fill="none" stroke-linecap="round"/>
       <g class="pencil">
-        <g transform="translate(87, 95) rotate(-50)">
+        <!-- forearm entering from the left, hand gripping the pencil -->
+        <path d="M67 77 C 46 70, 22 64, 0 61 L 0 79 C 24 82, 48 87, 69 92 Z"
+              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
+        <g transform="translate(84, 96) rotate(-50)">
           <rect x="-3" y="-32" width="6.5" height="24" rx="2" fill="#c9a227"/>
           <path d="M-3 -8 L0.3 1.5 L3.5 -8 Z" fill="#e8d9b8"/>
           <path d="M-0.6 -1.2 L0.3 1.5 L1.4 -1.2 Z" fill="#26221b"/>
         </g>
+        <ellipse cx="73" cy="84" rx="9.5" ry="8" transform="rotate(38 73 84)"
+                 fill="#f6efe0" stroke="#26221b" stroke-width="1.6"/>
+        <path d="M77 77.5 C 81 76.5, 83.5 78, 82 81 M79.5 82 C 83.5 81, 85.5 83, 84 86"
+              fill="none" stroke="#26221b" stroke-width="1.4" stroke-linecap="round"/>
       </g>
 
       <!-- the phone: a window held over the sheet. Its screen shows the SAME
            sheet, aligned 1:1, plus the daisy that exists only in there -->
       <g class="phone">
-        <rect x="80" y="32" width="108" height="158" rx="15" fill="#26221b"/>
+        <rect x="88" y="32" width="108" height="158" rx="15" fill="#26221b"/>
         <g clip-path="url(#phoneScreen)">
-          <rect x="89" y="42" width="90" height="138" fill="#fffdf6"/>
+          <rect x="97" y="42" width="90" height="138" fill="#fffdf6"/>
           <rect x="30" y="18" width="150" height="180" rx="4" fill="#fffdf6"
               stroke="#d8cfb8" stroke-width="1.5"/>
         <g fill="#2b261d">
@@ -591,13 +617,27 @@ body.tracing .notTracing { display: none; }
             <ellipse cx="93.8" cy="84.6" rx="4.5" ry="12" transform="rotate(324 93.8 84.6)"/>
             <path d="M105 119 C 104 130, 107 136, 105 144"/>
           </g>
-          <rect x="89" y="42" width="90" height="138" fill="#2b261d" opacity="0.04"/>
+          <rect x="97" y="42" width="90" height="138" fill="#2b261d" opacity="0.04"/>
         </g>
-        <rect x="89" y="42" width="90" height="138" rx="4" fill="none"
+        <rect x="97" y="42" width="90" height="138" rx="4" fill="none"
               stroke="#4a443a" stroke-width="1"/>
-        <circle cx="134" cy="37.5" r="1.6" fill="#4a443a"/>
+        <circle cx="142" cy="37.5" r="1.6" fill="#4a443a"/>
+        <!-- forearm from the right, hand gripping the phone's edge -->
+        <path d="M204 150 C 232 146, 268 156, 300 168 L 300 194 C 262 186, 228 178, 202 172 Z"
+              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M194 136 C 205 130, 213 136, 211 146 C 218 148, 219 156, 213 159
+                 C 217 163, 215 170, 209 171 C 211 176, 207 181, 200 180
+                 C 192 179, 188 172, 189 164 L 190 143 Z"
+              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M189 148 C 180 146, 176 138, 182 133 C 187 129, 194 131, 195 137"
+              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
       </g>
     </svg>
+    <p id="howCaption" aria-hidden="true">
+      <span class="cap c1">The phone looks for the printed marks&hellip;</span>
+      <span class="cap c2">&hellip;your picture appears - only on the screen&hellip;</span>
+      <span class="cap c3">&hellip;and you trace it on the real paper.</span>
+    </p>
     <div class="hero" style="flex-direction:column;align-items:center;gap:18px">
       <a class="btn ink pdflink" href="papertrace-sheet-A4.pdf" target="_blank"
          rel="noopener">Print the sheet (PDF)</a>
