@@ -33,6 +33,7 @@ const state = {
   place: { x: 0, y: 0, scale: 3, scaleY: null, angle: 0, flip: false },
   presetFrame: null,
   placed: false,
+  autoStyle: false,      // photo loaded, no style picked yet -> auto Artist
   userPlaced: false,
   fitSig: '',
   aspect: 1,
@@ -958,6 +959,7 @@ async function chooseLibrary(key) {
   try {
     const img = await loadImageEl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(f.svg));
     drawSourceFrom(img, 1000, 1000);
+    state.autoStyle = false;         // line art traces as-is
     state.selected = key;
     markSelected();
     await restyle(true);
@@ -1132,6 +1134,11 @@ async function commitCrop() {
     placeNewImage();
     buildStylePreviews();
     toast('Loaded ' + cropSrc.name);
+    // Photos should get their neural styles without any further taps: start
+    // the queue now, and let it auto-apply Artist sketch when ready (unless
+    // the user picks a style themselves first).
+    state.autoStyle = true;
+    ensureAllNeuralMaps();
   } finally {
     busy(false);
   }
@@ -1204,8 +1211,14 @@ async function ensureNeuralMap(kind, quiet) {
     if (!ortSessions[cfg.file]) {
       if (!quiet) toast('Downloading the ' + kind + ' model (one-time, ' + cfg.size + ')...', 6000);
       await loadScriptOnce('ort.min.js');
-      ort.env.wasm.wasmPaths = './';
+      // Absolute path: the proxy worker resolves wasm files from its own
+      // context, where './' would point somewhere else.
+      ort.env.wasm.wasmPaths = new URL('./', location.href).href;
       ort.env.wasm.numThreads = 1;   // no COOP/COEP headers on static hosting
+      // Run inference in a worker. Without this, session.run() blocks the
+      // main thread for seconds per model - which froze camera tracking
+      // whenever a style was picked or the preview queue was running.
+      ort.env.wasm.proxy = true;
       const model = await cachedFetch(cfg.file);
       ortSessions[cfg.file] = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
       dlog(kind + ' model loaded');
@@ -1307,6 +1320,13 @@ async function ensureAllNeuralMaps() {
       if (!neuralMaps[kind]) break;    // offline or failed - stop the queue
       buildStylePreviews();
       if (state.style.preset === kind) restyle(false, false);
+      if (kind === 'artist' && state.autoStyle && state.style.preset === 'original') {
+        state.autoStyle = false;
+        state.style.preset = 'artist';
+        restyle(false, false);
+        buildStylePreviews();
+        toast('Artist sketch applied - tap another style to change');
+      }
     }
   } finally {
     neuralQueueRunning = false;
@@ -1426,6 +1446,7 @@ function buildStylePreviews() {
     b.appendChild(label);
     b.addEventListener('click', () => {
       state.style.preset = p.id;
+      state.autoStyle = false;
       el.stylePreviews.querySelectorAll('.styleTile').forEach((t) => t.classList.remove('on'));
       b.classList.add('on');
       restyle(true);
