@@ -56,15 +56,15 @@
       <summary class="note">Tracking</summary>
       <div class="taglist" id="taglist"></div>
       <p class="note" id="mapinfo"></p>
-      <p class="note">The printed canvas anchors the moment a few of its marks are in view -
+      <p class="note">The printed sheet anchors the moment a few of its marks are in view -
         after that, any single mark keeps the picture locked to the page. Keep two or more in
         view for the steadiest hold.</p>
       <div class="btnrow">
         <button class="btn" id="btnReset">Reset anchors</button>
         <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
       </div>
-      <p class="note"><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank"
-        rel="noopener">Print the canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
+      <p class="note"><a class="pdflink" href="papertrace-sheet-A4.pdf" target="_blank"
+        rel="noopener">Print the sheet (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
         style="padding:2px 9px;font-size:12.5px">Save debug log</button></p>
     </details>
   </div>
@@ -125,12 +125,64 @@
 <!-- ======================================================== print step -->
 <div class="screen paper" id="printstep">
   <div class="inner">
-    <h1>Print the canvas</h1>
+    <h1>Print the sheet</h1>
     <p class="lead">One A4 page with tracking marks.<br>
       Your picture appears inside its frame.</p>
+
+    <svg id="howAnim" viewBox="0 0 300 210" aria-hidden="true">
+      <!-- the printed sheet -->
+      <rect x="30" y="18" width="150" height="180" rx="6" fill="#fffdf6"
+            stroke="#d8cfb8" stroke-width="1.5"/>
+      <!-- tracking marks -->
+      <g fill="#2b261d">
+        <rect class="mark" x="42" y="30" width="12" height="12"/>
+        <rect class="mark" x="156" y="30" width="12" height="12" style="animation-delay:.12s"/>
+        <rect class="mark" x="42" y="174" width="12" height="12" style="animation-delay:.24s"/>
+        <rect class="mark" x="156" y="174" width="12" height="12" style="animation-delay:.36s"/>
+        <rect class="mark" x="99" y="30" width="12" height="12" style="animation-delay:.18s"/>
+        <rect class="mark" x="99" y="174" width="12" height="12" style="animation-delay:.3s"/>
+      </g>
+      <!-- the picture appearing on the paper -->
+      <g class="appear" stroke="#5a5342" fill="none" stroke-width="2"
+         stroke-linecap="round" opacity="0">
+        <circle cx="105" cy="105" r="16"/>
+        <path d="M105 121 C 103 138, 108 146, 104 158"/>
+        <path d="M105 89 C 96 82, 88 88, 92 97"/>
+        <path d="M105 89 C 114 82, 122 88, 118 97"/>
+      </g>
+      <!-- one pencil stroke being traced -->
+      <path class="stroke" d="M62 132 C 84 120, 126 122, 148 138"
+            stroke="#26221b" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+      <!-- the pencil -->
+      <g class="pencil">
+        <g transform="translate(56, 128) rotate(40)">
+          <rect x="-3" y="-34" width="7" height="26" rx="2" fill="#c9a227"/>
+          <path d="M-3 -8 L0.5 2 L4 -8 Z" fill="#e8d9b8"/>
+          <path d="M-0.6 -1 L0.5 2 L1.7 -1 Z" fill="#26221b"/>
+        </g>
+      </g>
+      <!-- the phone, seeing it all -->
+      <g class="phone">
+        <rect x="200" y="44" width="72" height="130" rx="12" fill="#26221b"/>
+        <rect x="206" y="52" width="60" height="114" rx="6" fill="#fffdf6"/>
+        <g fill="#2b261d">
+          <rect x="211" y="58" width="6" height="6"/>
+          <rect x="255" y="58" width="6" height="6"/>
+          <rect x="211" y="154" width="6" height="6"/>
+          <rect x="255" y="154" width="6" height="6"/>
+        </g>
+        <g class="appear" stroke="#5a5342" fill="none" stroke-width="1.6"
+           stroke-linecap="round" opacity="0">
+          <circle cx="236" cy="103" r="9"/>
+          <path d="M236 112 C 235 122, 238 126, 235 133"/>
+          <path d="M236 94 C 231 90, 226 93, 228 99"/>
+          <path d="M236 94 C 241 90, 246 93, 244 99"/>
+        </g>
+      </g>
+    </svg>
     <div class="hero" style="flex-direction:column;align-items:center;gap:18px">
-      <a class="btn ink pdflink" href="papertrace-canvas-A4.pdf" target="_blank"
-         rel="noopener">Print the canvas (PDF)</a>
+      <a class="btn ink pdflink" href="papertrace-sheet-A4.pdf" target="_blank"
+         rel="noopener">Print the sheet (PDF)</a>
       <button class="btn ink" id="btnTrace">I have it &mdash; start tracing</button>
     </div>
     <p class="startFoot"><button class="linklike" id="btnBackToStyle">back to styles</button></p>
@@ -142,13 +194,13 @@
   <div class="inner">
     <h1>How it works</h1>
     <p class="lead">Your phone has no depth sensor it can use from a web page, so the app works
-      out where the paper is by watching the printed marks on the canvas.</p>
+      out where the paper is by watching the printed marks on the sheet.</p>
 
-    <h2>Why the canvas has those marks</h2>
+    <h2>Why the sheet has those marks</h2>
     <p>Each printed mark is a square of known shape and position. Seeing a few of them gives the
       browser enough geometry to work out how the page is tilted and how far away it is - that is
       what lets your picture sit <i>on</i> the paper in correct perspective rather than floating
-      on the screen. The canvas layout is known to the app, so the moment a few marks are in
+      on the screen. The sheet layout is known to the app, so the moment a few marks are in
       view the whole page locks instantly; after that, any single mark in view keeps it locked.</p>
 
     <h2>Getting steady results</h2>

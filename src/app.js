@@ -314,7 +314,7 @@ async function startCameraInner() {
   resize();
   requestWakeLock();
   loop();
-  toast('Point the camera at the printed canvas');
+  toast('Point the camera at the printed sheet');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
      + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
@@ -527,7 +527,7 @@ function applyDetections(dets, ms, detW, stats) {
   }
   if (!res.H && !res.holding) state.pose = null;
   if (res.presetMatched) {
-    toast('Canvas locked');
+    toast('Sheet locked');
     dlog(`PRESET MATCHED ${res.presetMatched.join(',')}  (${markerMap.size} anchored, no sweep needed)`);
     const preset = PRESET_LAYOUTS.find((p) => p.frame
       && res.presetMatched.every((id) => Object.prototype.hasOwnProperty.call(p.entries, id)));
@@ -775,10 +775,10 @@ function loop() {
 let lastStatus = '';
 function updateStatus() {
   const r = state.lastResult;
-  let cls = 'bad', text = 'Looking for the canvas';
+  let cls = 'bad', text = 'Looking for the sheet';
   if (state.freehand) { cls = 'warn'; text = 'Freehand (no tags)'; }
   else if (!r) { cls = 'bad'; text = 'Starting'; }
-  else if (r.tracking && markerMap.presetAdopted) { cls = 'good'; text = 'Canvas locked'; }
+  else if (r.tracking && markerMap.presetAdopted) { cls = 'good'; text = 'Sheet locked'; }
   else if (r.tracking && r.known >= 2) { cls = 'good'; text = r.known + ' marks locked'; }
   else if (r.tracking && r.known === 1) { cls = 'warn'; text = 'One mark - show another'; }
   else if (r.holding) { cls = 'warn'; text = 'Holding - marks hidden'; }
@@ -823,7 +823,7 @@ function fitToTags() {
  * Places the loaded image to exactly fill a known printed frame (see
  * state.presetFrame), stretched to the frame's own shape rather than
  * letterboxed to the image's aspect ratio - the frame is the whole point of
- * the printed canvas sheet, so whatever picture is loaded should fill it
+ * the printed sheet, so whatever picture is loaded should fill it
  * exactly, not just roughly overlap it.
  */
 function fitToFrame(frame) {
@@ -1048,7 +1048,8 @@ function clampCropPan() {
   const cw = window.innerWidth, ch = window.innerHeight;
   const s = cropBaseScale() * cropView.zoom;
   const frame = cropFrameRect();
-  // The frame must stay fully inside the (scaled) image on every side.
+  // Keep the image from being panned pointlessly far: while it is larger
+  // than the frame it must cover it; once zoomed smaller, it stays centred.
   const maxPanX = Math.max(0, (cropSrc.w * s - frame.w) / 2 - (cw / 2 - frame.x - frame.w / 2));
   const maxPanY = Math.max(0, (cropSrc.h * s - frame.h) / 2 - (ch / 2 - frame.y - frame.h / 2));
   cropView.panX = Math.max(-maxPanX, Math.min(maxPanX, cropView.panX));
@@ -1119,7 +1120,9 @@ function applyCropGesture() {
     if (d0 < 1e-6) return;
     const m0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 };
     const m1 = { x: (a1.x + b1.x) / 2, y: (a1.y + b1.y) / 2 };
-    cropView.zoom = Math.max(1, Math.min(8, g.zoom * (d1 / d0)));
+    // No lower clamp at "cover": fitting the whole picture inside the frame
+    // (with empty margins that trace as blank paper) is a legitimate crop.
+    cropView.zoom = Math.max(0.15, Math.min(8, g.zoom * (d1 / d0)));
     cropView.panX = g.panX + (m1.x - m0.x);
     cropView.panY = g.panY + (m1.y - m0.y);
   }
@@ -1156,6 +1159,12 @@ async function commitCrop() {
     // the camera is not running yet, so the CPU is free.
     state.autoStyle = true;
     ensureAllNeuralMaps();
+    if (isUpload) {
+      isUpload = false;
+      out.toBlob((blob) => {
+        if (blob) saveRecent(blob).then(buildLibrary);
+      }, 'image/jpeg', 0.85);
+    }
   } finally {
     busy(false);
   }
@@ -1450,8 +1459,86 @@ const STARTERS = [
   { key: 'vangogh', file: 'start-vangogh.jpg', label: 'Van Gogh (1887)' },
 ];
 
-function buildLibrary() {
+/* ------------------------------------------------------ recent uploads */
+// Cropped uploads are kept (IndexedDB, newest first, capped) and offered as
+// library tiles, so a picture someone styled once can be picked again
+// without re-uploading. Starters are permanent, so only uploads are kept.
+const RECENTS_MAX = 6;
+let isUpload = false;            // set by the file input, cleared by starters
+
+function recentsDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('papertrace', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('recents', { keyPath: 'id' });
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function recentsAll() {
+  try {
+    const db = await recentsDb();
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction('recents').objectStore('recents').getAll();
+      req.onsuccess = () => resolve((req.result || []).sort((a, b) => b.id - a.id));
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) { return []; }
+}
+
+async function saveRecent(blob) {
+  try {
+    const db = await recentsDb();
+    const all = await recentsAll();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('recents', 'readwrite');
+      const store = tx.objectStore('recents');
+      store.put({ id: Date.now(), blob });
+      for (const old of all.slice(RECENTS_MAX - 1)) store.delete(old.id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) { dlog('recents save failed: ' + e); }
+}
+
+async function chooseRecent(rec) {
+  busy(true);
+  try {
+    const bitmap = await createImageBitmap(rec.blob);
+    drawSourceFrom(bitmap, bitmap.width, bitmap.height);   // already frame-ratio
+    state.selected = 'recent' + rec.id;
+    markSelected();
+    await restyle(true);
+    placeNewImage();
+    state.autoStyle = true;
+    ensureAllNeuralMaps();
+    showScreen('stylepick');
+    buildStylePreviews();
+  } catch (e) {
+    toast('Could not load that picture');
+  } finally { busy(false); }
+}
+
+let recentUrls = [];
+async function buildLibrary() {
+  recentUrls.forEach((u) => URL.revokeObjectURL(u));
+  recentUrls = [];
+  const recents = await recentsAll();
+  buildLibrarySync(recents);
+}
+
+function buildLibrarySync(recents) {
   el.lib.innerHTML = '';
+  for (const rec of recents || []) {
+    const b = document.createElement('button');
+    b.dataset.key = 'recent' + rec.id;
+    b.title = 'Your picture';
+    const url = URL.createObjectURL(rec.blob);
+    recentUrls.push(url);
+    b.innerHTML = `<img src="${url}" alt="Your picture">`;
+    b.addEventListener('click', () => chooseRecent(rec));
+    el.lib.appendChild(b);
+  }
   for (const st of STARTERS) {
     const b = document.createElement('button');
     b.dataset.key = st.key;
@@ -1464,6 +1551,7 @@ function buildLibrary() {
         const blob = await resp.blob();
         state.selected = st.key;
         markSelected();
+        isUpload = false;
         await loadUserFile(new File([blob], st.file, { type: 'image/jpeg' }));
       } catch (e) {
         toast('Could not load that picture');
@@ -1498,20 +1586,21 @@ function buildStylePreviews() {
   const data = srcThumb.getContext('2d', { willReadFrequently: true })
     .getImageData(0, 0, srcThumb.width, srcThumb.height);
   for (const p of STYLE_PRESETS) {
-    const tile = document.createElement('canvas');
-    tile.width = data.width; tile.height = data.height;
-    const tctx = tile.getContext('2d');
-    tctx.fillStyle = '#eeeae0';           // paper-ish, so transparent lines read
-    tctx.fillRect(0, 0, tile.width, tile.height);
+    let tile;
     if (NEURAL_CFG[p.id] && !neuralMaps[p.id]) {
-      // Model hasn't run yet - a placeholder invites the tap that loads it.
-      tctx.fillStyle = '#8a8578';
-      tctx.font = `${Math.round(tile.height * 0.3)}px serif`;
-      tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
-      tctx.fillText(NEURAL_CFG[p.id].out === 'rgb' ? '\uD83C\uDFA8' : '\u270E', tile.width / 2, tile.height * 0.42);
-      tctx.font = `600 ${Math.max(9, Math.round(tile.height * 0.09))}px sans-serif`;
-      tctx.fillText(neuralPending[p.id] ? 'drawing...' : 'tap to draw', tile.width / 2, tile.height * 0.72);
+      // Model hasn't produced this style yet. While its worker runs, the
+      // tile visibly WORKS (shimmer + bobbing pencil) - a static label read
+      // as broken. Untouched styles invite the tap that starts them.
+      tile = document.createElement('div');
+      tile.className = 'tilePh' + (neuralPending[p.id] ? ' loading' : '');
+      tile.innerHTML = '<span class="phGlyph">\u270E</span><span class="phLabel">'
+        + (neuralPending[p.id] ? 'drawing\u2026' : 'tap to draw') + '</span>';
     } else {
+      tile = document.createElement('canvas');
+      tile.width = data.width; tile.height = data.height;
+      const tctx = tile.getContext('2d');
+      tctx.fillStyle = '#eeeae0';         // paper-ish, so transparent lines read
+      tctx.fillRect(0, 0, tile.width, tile.height);
       const out = applyStyle(data, { ...state.style, preset: p.id, neuralMaps });
       const tmp = document.createElement('canvas');
       tmp.width = out.width; tmp.height = out.height;
@@ -1773,7 +1862,10 @@ function wire() {
   bindSlider('opacity', () => state.opacity, (v) => { state.opacity = v; });
 
   el.file.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files[0]) loadUserFile(e.target.files[0]);
+    if (e.target.files && e.target.files[0]) {
+      isUpload = true;
+      loadUserFile(e.target.files[0]);
+    }
     e.target.value = '';
   });
   $('btnCropCancel').addEventListener('click', cancelCrop);
@@ -1790,10 +1882,10 @@ function wire() {
       e.preventDefault();
       try {
         const resp = await fetch(a.getAttribute('href'));
-        const file = new File([await resp.blob()], 'papertrace-canvas.pdf',
+        const file = new File([await resp.blob()], 'papertrace-sheet.pdf',
                               { type: 'application/pdf' });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'PaperTrace canvas' });
+          await navigator.share({ files: [file], title: 'PaperTrace sheet' });
         } else {
           toast('Open strunden.github.io/papertrace in Safari to print the canvas', 4500);
         }

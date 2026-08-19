@@ -172,6 +172,8 @@ def run(headed=False):
         check("picture committed", page.evaluate("() => hasPicture"),
               f"srcCanvas {page.evaluate('() => srcCanvas.width')}px")
         check("crop lands on the style screen", page.is_visible("#stylepick h1"))
+        check("pending styles show an animated loading tile",
+              page.eval_on_selector_all(".tilePh.loading", "els => els.length") >= 1)
 
         # The artist model auto-applies once its map is computed (local fetch,
         # wasm inference in a worker - give it a while under software GL).
@@ -372,6 +374,13 @@ def run(headed=False):
         page.wait_for_timeout(300)
         page.click('#lib button[data-key="lily"]')
         page.wait_for_selector("#crop.on", timeout=8000)
+        # Regression: zoom used to clamp at screen-cover, so a picture could
+        # never be scaled down to fit inside the frame. Zoom out and commit -
+        # the uncovered margins must come through transparent (they trace as
+        # blank paper).
+        page.evaluate("() => { cropView.zoom = 0.5; clampCropPan(); renderCrop(); }")
+        page.wait_for_timeout(150)
+        check("crop can zoom below cover", page.evaluate("() => cropView.zoom") == 0.5)
         import time as _time
         t0 = _time.time()
         page.click("#btnCropUse")
@@ -386,10 +395,38 @@ def run(headed=False):
         page.wait_for_timeout(400)
         check("new picture's artist map re-renders", page.evaluate(
             "() => state.style.preset === 'artist' && outCanvas.width > 1"))
+        corner = page.evaluate(
+            "() => srcCanvas.getContext('2d').getImageData(1, 1, 1, 1).data[3]")
+        check("zoomed-out crop margins are transparent", corner == 0, f"corner alpha {corner}")
         page.click("#btnStyleNext")   # camera already running: straight back to AR
         page.wait_for_timeout(400)
         check("mid-session Continue skips the print step",
               not page.is_visible("#printstep h1") and not page.is_visible("#stylepick h1"))
+
+        # ---------------------------------------------------- recent uploads
+        page.evaluate("""async () => {
+          const resp = await fetch('/start-dog.jpg');
+          const blob = await resp.blob();
+          const dt = new DataTransfer();
+          dt.items.add(new File([blob], 'mydog.jpg', { type: 'image/jpeg' }));
+          const input = document.getElementById('file');
+          input.files = dt.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }""")
+        page.wait_for_selector("#crop.on", timeout=8000)
+        page.click("#btnCropUse")
+        page.wait_for_selector("#stylepick h1", state="visible", timeout=8000)
+        page.click("#btnBackToPick")
+        try:
+            page.wait_for_selector('#lib button[data-key^="recent"]', timeout=8000)
+            check("upload appears as a recent tile", True)
+        except Exception:
+            check("upload appears as a recent tile", False)
+        page.click('#lib button[data-key^="recent"]')
+        page.wait_for_selector("#stylepick h1", state="visible", timeout=8000)
+        check("recent tile reloads the picture", page.evaluate("() => hasPicture"))
+        page.click("#btnStyleNext")
+        page.wait_for_timeout(400)
 
         # ------------------------------------------------------- recovery
         # Read the size in the same synchronous turn as the click - a detection
