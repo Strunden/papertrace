@@ -16,8 +16,7 @@ const STYLE_PRESETS = [
   { id: 'artist',   name: 'Artist sketch', hint: 'Clean, delicate line drawing by a neural model trained on artist drawings. Downloads ~28 MB once, then works offline.' },
   { id: 'rough',    name: 'Rough sketch', hint: 'Loose construction-line sketch, like an underdrawing. Downloads ~16 MB once.' },
   { id: 'ink',      name: 'Ink brush',   hint: 'Bold brush-and-ink strokes. Great for markers and strong outlines. Downloads ~4 MB once.' },
-  { id: 'painting', name: 'Painting',    hint: 'Crisp painted look (Shinkai style) - a colour guide for painting what you traced. Downloads ~8 MB once.' },
-  { id: 'paprika',  name: 'Paprika',     hint: 'Warm, poster-like painted look (Paprika style) - a bolder colour guide. Downloads ~9 MB once.' },
+  { id: 'paprika',  name: 'Paprika',     hint: 'Warm, poster-like painted look - a colour guide for painting what you traced. Downloads ~9 MB once.' },
   { id: 'ghost',    name: 'Ghost',       hint: 'The photo itself, faded. Best for shading reference.' },
   { id: 'original', name: 'Original',    hint: 'Untouched, for artwork that is already line art.' },
 ];
@@ -122,7 +121,6 @@ function applyStyle(imageData, o) {
       }
       break;
     }
-    case 'painting':
     case 'paprika': {
       // The painted rendering from app.js, shown the way ghost/original show
       // the photo - a colour reference, not lines.
