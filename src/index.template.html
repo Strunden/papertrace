@@ -23,25 +23,20 @@
   <button class="iconbtn" id="btnFreeze" title="Freeze the frame">❙❙</button>
   <button class="iconbtn" id="btnTorch" title="Torch" disabled>☀</button>
   <button class="iconbtn" id="btnMirror" title="Mirror the view to match your table">⇄</button>
-  <button class="iconbtn" id="btnShot" title="Save a snapshot">⤓</button>
   <button class="iconbtn" id="btnHelp2" title="Help">?</button>
 </div>
 
 <div id="sheet">
   <!-- ------------------------------------------------------------ image -->
   <div class="panel" data-panel="image">
-    <h3>Reference image</h3>
+    <h3>Picture</h3>
     <div class="lib" id="lib"></div>
     <input type="file" id="file" accept="image/*" hidden>
-    <p class="note" style="margin-top:12px">
-      Tap a picture to start - it gets drawn as traceable lines, right on your paper.
-      Or load one of your own photos.</p>
   </div>
 
   <!-- ------------------------------------------------------------ style -->
   <div class="panel" data-panel="style">
-    <h3>Trace style</h3>
-    <p class="note">Tap the look you want - shown on your actual picture.</p>
+    <h3>Style</h3>
     <div class="styleGallery" id="stylePreviews"></div>
 
     <div class="row"><label>Opacity</label>
@@ -50,9 +45,8 @@
 
   <!-- ------------------------------------------------------------ place -->
   <div class="panel" data-panel="place">
-    <h3>Camera view</h3>
-    <p class="note">Drag to pan, pinch to zoom - get closer without losing the frame. The image
-      itself is placed automatically; adjust it with the buttons below.</p>
+    <h3>View</h3>
+    <p class="note">Drag to pan, pinch to zoom.</p>
     <div class="row"><label>Zoom</label>
       <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
     <div class="btnrow">
@@ -72,35 +66,29 @@
       <div class="row"><label>Grid cells</label>
         <input type="range" id="gridN" min="2" max="8" value="3"><output id="gridNOut">3×3</output></div>
     </details>
-  </div>
-
-  <!-- ------------------------------------------------------------- tags -->
-  <div class="panel" data-panel="tags">
-    <h3>Tracking anchors</h3>
-    <div class="taglist" id="taglist"></div>
-    <p class="note" id="mapinfo"></p>
-    <p class="note">Sweep the phone across your tags once to learn them - after that, any one
-      tag holds the overlay in place. <b>Two or more in view is steadier than one.</b></p>
-    <div class="btnrow">
-      <button class="btn" id="btnReset">Reset anchors</button>
-      <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
-    </div>
     <details>
-      <summary class="note">Need the canvas, or tracking not working?</summary>
+      <summary class="note">Tracking</summary>
+      <div class="taglist" id="taglist"></div>
+      <p class="note" id="mapinfo"></p>
+      <p class="note">Sweep the phone across your tags once to learn them - after that, any one
+        tag holds the overlay in place. Two or more in view is steadier than one.</p>
+      <div class="btnrow">
+        <button class="btn" id="btnReset">Reset anchors</button>
+        <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
+      </div>
       <p class="note"><a href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the
-        canvas (A4 PDF)</a> - tracking marks pre-placed, frame in the middle.</p>
-      <p class="note">If tags won't anchor: <button class="btn" id="btnDebugLog" style="padding:2px 9px;font-size:12.5px">Save debug log</button>
-        after pointing the camera at them a few seconds - a text file of what was seen and why each
-        tag did or didn't register. Stays on your device unless you share it.</p>
+        canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
+        style="padding:2px 9px;font-size:12.5px">Save debug log</button></p>
     </details>
   </div>
+
+</div>
 </div>
 
 <div id="dock">
-  <button class="tab" data-tab="image">Image</button>
+  <button class="tab" data-tab="image">Picture</button>
   <button class="tab" data-tab="style">Style</button>
-  <button class="tab" data-tab="place">Place</button>
-  <button class="tab" data-tab="tags">Tags</button>
+  <button class="tab" data-tab="place">View</button>
 </div>
 
 <div id="toast"></div>
@@ -113,6 +101,13 @@
     <h1 class="reveal r2">PaperTrace</h1>
     <p class="lead reveal r3">Your photo, on the paper in front of you.<br>
       Trace it with a real pencil.</p>
+
+    <ol class="steps reveal r3b">
+      <li>Print the canvas</li>
+      <li>Choose a picture</li>
+      <li>Pick a style</li>
+      <li>Trace it</li>
+    </ol>
 
     <div id="insecure" style="display:none;background:#f6dcdc;border:1px solid #d89a9a;
          color:#5a2323;border-radius:12px;padding:14px;margin:0 0 18px;text-align:left">
@@ -127,7 +122,7 @@
          rel="noopener">Print the canvas &darr;</a>
     </div>
 
-    <p class="startFoot reveal r4">
+    <p class="startFoot reveal r5">
       <button class="linklike" id="btnHelp">how it works</button><br>
       <span class="privacyline">Nothing leaves your device.</span></p>
   </div>

@@ -315,6 +315,7 @@ async function startCameraInner() {
   requestWakeLock();
   loop();
   toast('Point the camera at your tags and sweep across them once');
+  if (!srcCanvas.width && !openTab) selectTab('image');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
      + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
@@ -952,21 +953,7 @@ function placeNewImage() {
   }
 }
 
-async function chooseLibrary(key) {
-  const f = FLOWERS[key];
-  if (!f) return;
-  busy(true); await raf();
-  try {
-    const img = await loadImageEl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(f.svg));
-    drawSourceFrom(img, 1000, 1000);
-    state.autoStyle = false;         // line art traces as-is
-    state.selected = key;
-    markSelected();
-    await restyle(true);
-    placeNewImage();
-    buildStylePreviews();
-  } finally { busy(false); }
-}
+
 
 /**
  * createImageBitmap decodes directly from the File - no object URL, no <img>
@@ -1367,19 +1354,12 @@ const STARTERS = [
   { key: 'daisy',   file: 'start-daisy.jpg',   label: 'Daisy' },
   { key: 'lily',    file: 'start-lily.jpg',    label: 'Stargazer lily' },
   { key: 'forest',  file: 'start-forest.jpg',  label: 'Forest path' },
+  { key: 'dog',     file: 'start-dog.jpg',     label: 'Black Labrador' },
   { key: 'vangogh', file: 'start-vangogh.jpg', label: 'Van Gogh (1887)' },
 ];
 
 function buildLibrary() {
   el.lib.innerHTML = '';
-  // one line-art flower - the rose from the opening; already traceable as-is
-  const rose = document.createElement('button');
-  rose.dataset.key = 'rose';
-  rose.title = FLOWERS.rose.label;
-  rose.innerHTML = FLOWERS.rose.svg;
-  rose.addEventListener('click', () => chooseLibrary('rose'));
-  el.lib.appendChild(rose);
-
   for (const st of STARTERS) {
     const b = document.createElement('button');
     b.dataset.key = st.key;
@@ -1558,32 +1538,6 @@ function markerSvg(id, mm) {
 
 
 
-/* -------------------------------------------------------------- snapshot */
-function snapshot() {
-  const c = document.createElement('canvas');
-  c.width = window.innerWidth * dpr();
-  c.height = window.innerHeight * dpr();
-  const x = c.getContext('2d');
-  // drawImage reads the source elements' real pixels, ignoring whatever CSS
-  // transform is mirroring them on screen - mirror the export the same way
-  // by hand, or a saved snapshot would silently not match what was visible.
-  if (state.mirrored) { x.translate(c.width, 0); x.scale(-1, 1); }
-  const vw = el.video.videoWidth, vh = el.video.videoHeight;
-  if (vw) {
-    const s = Math.max(c.width / vw, c.height / vh);
-    x.drawImage(el.video, (c.width - vw * s) / 2, (c.height - vh * s) / 2, vw * s, vh * s);
-  }
-  x.drawImage(el.gl, 0, 0);
-  x.drawImage(el.hud, 0, 0);
-  c.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'papertrace.png';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast('Saved snapshot');
-  }, 'image/png');
-}
 
 /* ------------------------------------------------------------------ wire */
 function wire() {
@@ -1631,7 +1585,6 @@ function wire() {
     updateCamTransform();
     toast(state.mirrored ? 'Mirrored to match your table' : 'Mirror off');
   });
-  $('btnShot').addEventListener('click', snapshot);
 
   $('btnLock').addEventListener('click', () => {
     state.locked = !state.locked;
@@ -1702,6 +1655,5 @@ function wire() {
 buildLibrary();
 wire();
 updatePlaceInfo();
-chooseLibrary('rose');
 if (insecureContext()) $('insecure').style.display = 'block';
 showScreen('start');

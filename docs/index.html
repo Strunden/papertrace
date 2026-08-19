@@ -83,9 +83,9 @@ html, body {
   display: flex; gap: 8px; justify-content: center;
 }
 .tab {
-  flex: 1; max-width: 130px; padding: 11px 6px; border-radius: 14px;
+  flex: 1; max-width: 130px; padding: 12px 6px; border-radius: 999px;
   background: var(--panel); border: 1px solid var(--line); color: var(--text);
-  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  font-size: 13px; font-weight: 600; letter-spacing: .01em; cursor: pointer;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .tab.on { background: var(--accent); color: #221503; border-color: transparent; }
@@ -150,13 +150,15 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 .btn.wide { display: block; width: 100%; text-align: center; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
-.lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+.lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
 .lib button {
-  aspect-ratio: 1; border-radius: 12px; background: #f6f4ee; border: 2px solid transparent;
-  padding: 4px; cursor: pointer; display: grid; place-items: center; overflow: hidden;
+  /* same ratio as the printed frame, so pictures show exactly what will land
+     on the paper - no letterboxing */
+  aspect-ratio: 0.658; border-radius: 12px; background: #16181d; border: 2px solid transparent;
+  padding: 0; cursor: pointer; overflow: hidden;
 }
 .lib button.on { border-color: var(--accent); }
-.lib img, .lib svg { width: 100%; height: 100%; object-fit: contain; }
+.lib img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .lib .add { background: rgba(255,255,255,.07); border: 1px dashed var(--line);
             color: var(--dim); font-size: 12px; text-align: center; line-height: 1.3; }
 
@@ -167,7 +169,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   padding: 5px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 5px;
 }
 .styleTile.on { border-color: var(--accent); }
-.styleTile canvas { width: 100%; aspect-ratio: 1; border-radius: 7px; object-fit: contain; }
+.styleTile canvas { width: 100%; aspect-ratio: 0.658; border-radius: 7px; object-fit: cover; }
 .styleTile span { font-size: 11px; color: var(--dim); line-height: 1.2; }
 .styleTile.on span { color: var(--text); font-weight: 600; }
 
@@ -258,7 +260,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   font-size: clamp(40px, 11vw, 54px); letter-spacing: -.02em; line-height: 1.05;
   margin: 6px 0 10px; color: #26221b; font-weight: 600;
 }
-#start .lead { font-size: 17px; line-height: 1.5; color: #6f695c; margin: 0 0 30px; }
+#start .lead { font-size: 17px; line-height: 1.5; color: #6f695c; margin: 0 0 22px; }
 .startActions { display: flex; flex-direction: column; align-items: center; gap: 18px; }
 .btn.ink {
   background: #26221b; color: #f6f1e4; border: none; border-radius: 999px;
@@ -275,11 +277,25 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   font-size: inherit; cursor: pointer; text-decoration: underline;
   text-underline-offset: 2px; }
 
+#start .steps { list-style: none; counter-reset: st; padding: 0; margin: 0 0 30px;
+  display: inline-block; text-align: left; }
+#start .steps li {
+  counter-increment: st; font-size: 15.5px; color: #55503f; margin: 7px 0;
+}
+#start .steps li::before {
+  content: counter(st); display: inline-block; width: 22px; height: 22px;
+  line-height: 22px; margin-right: 10px; border-radius: 50%;
+  border: 1px solid #c9bfa6; color: #8a8168; font-size: 12px;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+}
+
 .reveal { opacity: 0; animation: rise .7s cubic-bezier(.2, .7, .2, 1) forwards; }
 .r1 { animation-delay: .05s; }
 .r2 { animation-delay: .85s; }
 .r3 { animation-delay: 1.05s; }
-.r4 { animation-delay: 1.3s; }
+.r3b { animation-delay: 1.25s; }
+.r4 { animation-delay: 1.5s; }
+.r5 { animation-delay: 1.7s; }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); }
                   to { opacity: 1; transform: none; } }
 @keyframes draw { to { stroke-dashoffset: 0; } }
@@ -305,25 +321,20 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   <button class="iconbtn" id="btnFreeze" title="Freeze the frame">❙❙</button>
   <button class="iconbtn" id="btnTorch" title="Torch" disabled>☀</button>
   <button class="iconbtn" id="btnMirror" title="Mirror the view to match your table">⇄</button>
-  <button class="iconbtn" id="btnShot" title="Save a snapshot">⤓</button>
   <button class="iconbtn" id="btnHelp2" title="Help">?</button>
 </div>
 
 <div id="sheet">
   <!-- ------------------------------------------------------------ image -->
   <div class="panel" data-panel="image">
-    <h3>Reference image</h3>
+    <h3>Picture</h3>
     <div class="lib" id="lib"></div>
     <input type="file" id="file" accept="image/*" hidden>
-    <p class="note" style="margin-top:12px">
-      Tap a picture to start - it gets drawn as traceable lines, right on your paper.
-      Or load one of your own photos.</p>
   </div>
 
   <!-- ------------------------------------------------------------ style -->
   <div class="panel" data-panel="style">
-    <h3>Trace style</h3>
-    <p class="note">Tap the look you want - shown on your actual picture.</p>
+    <h3>Style</h3>
     <div class="styleGallery" id="stylePreviews"></div>
 
     <div class="row"><label>Opacity</label>
@@ -332,9 +343,8 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 
   <!-- ------------------------------------------------------------ place -->
   <div class="panel" data-panel="place">
-    <h3>Camera view</h3>
-    <p class="note">Drag to pan, pinch to zoom - get closer without losing the frame. The image
-      itself is placed automatically; adjust it with the buttons below.</p>
+    <h3>View</h3>
+    <p class="note">Drag to pan, pinch to zoom.</p>
     <div class="row"><label>Zoom</label>
       <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
     <div class="btnrow">
@@ -354,35 +364,29 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       <div class="row"><label>Grid cells</label>
         <input type="range" id="gridN" min="2" max="8" value="3"><output id="gridNOut">3×3</output></div>
     </details>
-  </div>
-
-  <!-- ------------------------------------------------------------- tags -->
-  <div class="panel" data-panel="tags">
-    <h3>Tracking anchors</h3>
-    <div class="taglist" id="taglist"></div>
-    <p class="note" id="mapinfo"></p>
-    <p class="note">Sweep the phone across your tags once to learn them - after that, any one
-      tag holds the overlay in place. <b>Two or more in view is steadier than one.</b></p>
-    <div class="btnrow">
-      <button class="btn" id="btnReset">Reset anchors</button>
-      <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
-    </div>
     <details>
-      <summary class="note">Need the canvas, or tracking not working?</summary>
+      <summary class="note">Tracking</summary>
+      <div class="taglist" id="taglist"></div>
+      <p class="note" id="mapinfo"></p>
+      <p class="note">Sweep the phone across your tags once to learn them - after that, any one
+        tag holds the overlay in place. Two or more in view is steadier than one.</p>
+      <div class="btnrow">
+        <button class="btn" id="btnReset">Reset anchors</button>
+        <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
+      </div>
       <p class="note"><a href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the
-        canvas (A4 PDF)</a> - tracking marks pre-placed, frame in the middle.</p>
-      <p class="note">If tags won't anchor: <button class="btn" id="btnDebugLog" style="padding:2px 9px;font-size:12.5px">Save debug log</button>
-        after pointing the camera at them a few seconds - a text file of what was seen and why each
-        tag did or didn't register. Stays on your device unless you share it.</p>
+        canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
+        style="padding:2px 9px;font-size:12.5px">Save debug log</button></p>
     </details>
   </div>
+
+</div>
 </div>
 
 <div id="dock">
-  <button class="tab" data-tab="image">Image</button>
+  <button class="tab" data-tab="image">Picture</button>
   <button class="tab" data-tab="style">Style</button>
-  <button class="tab" data-tab="place">Place</button>
-  <button class="tab" data-tab="tags">Tags</button>
+  <button class="tab" data-tab="place">View</button>
 </div>
 
 <div id="toast"></div>
@@ -395,6 +399,13 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
     <h1 class="reveal r2">PaperTrace</h1>
     <p class="lead reveal r3">Your photo, on the paper in front of you.<br>
       Trace it with a real pencil.</p>
+
+    <ol class="steps reveal r3b">
+      <li>Print the canvas</li>
+      <li>Choose a picture</li>
+      <li>Pick a style</li>
+      <li>Trace it</li>
+    </ol>
 
     <div id="insecure" style="display:none;background:#f6dcdc;border:1px solid #d89a9a;
          color:#5a2323;border-radius:12px;padding:14px;margin:0 0 18px;text-align:left">
@@ -409,7 +420,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
          rel="noopener">Print the canvas &darr;</a>
     </div>
 
-    <p class="startFoot reveal r4">
+    <p class="startFoot reveal r5">
       <button class="linklike" id="btnHelp">how it works</button><br>
       <span class="privacyline">Nothing leaves your device.</span></p>
   </div>
@@ -2289,6 +2300,7 @@ async function startCameraInner() {
   requestWakeLock();
   loop();
   toast('Point the camera at your tags and sweep across them once');
+  if (!srcCanvas.width && !openTab) selectTab('image');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
      + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
@@ -2926,21 +2938,7 @@ function placeNewImage() {
   }
 }
 
-async function chooseLibrary(key) {
-  const f = FLOWERS[key];
-  if (!f) return;
-  busy(true); await raf();
-  try {
-    const img = await loadImageEl('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(f.svg));
-    drawSourceFrom(img, 1000, 1000);
-    state.autoStyle = false;         // line art traces as-is
-    state.selected = key;
-    markSelected();
-    await restyle(true);
-    placeNewImage();
-    buildStylePreviews();
-  } finally { busy(false); }
-}
+
 
 /**
  * createImageBitmap decodes directly from the File - no object URL, no <img>
@@ -3341,19 +3339,12 @@ const STARTERS = [
   { key: 'daisy',   file: 'start-daisy.jpg',   label: 'Daisy' },
   { key: 'lily',    file: 'start-lily.jpg',    label: 'Stargazer lily' },
   { key: 'forest',  file: 'start-forest.jpg',  label: 'Forest path' },
+  { key: 'dog',     file: 'start-dog.jpg',     label: 'Black Labrador' },
   { key: 'vangogh', file: 'start-vangogh.jpg', label: 'Van Gogh (1887)' },
 ];
 
 function buildLibrary() {
   el.lib.innerHTML = '';
-  // one line-art flower - the rose from the opening; already traceable as-is
-  const rose = document.createElement('button');
-  rose.dataset.key = 'rose';
-  rose.title = FLOWERS.rose.label;
-  rose.innerHTML = FLOWERS.rose.svg;
-  rose.addEventListener('click', () => chooseLibrary('rose'));
-  el.lib.appendChild(rose);
-
   for (const st of STARTERS) {
     const b = document.createElement('button');
     b.dataset.key = st.key;
@@ -3532,32 +3523,6 @@ function markerSvg(id, mm) {
 
 
 
-/* -------------------------------------------------------------- snapshot */
-function snapshot() {
-  const c = document.createElement('canvas');
-  c.width = window.innerWidth * dpr();
-  c.height = window.innerHeight * dpr();
-  const x = c.getContext('2d');
-  // drawImage reads the source elements' real pixels, ignoring whatever CSS
-  // transform is mirroring them on screen - mirror the export the same way
-  // by hand, or a saved snapshot would silently not match what was visible.
-  if (state.mirrored) { x.translate(c.width, 0); x.scale(-1, 1); }
-  const vw = el.video.videoWidth, vh = el.video.videoHeight;
-  if (vw) {
-    const s = Math.max(c.width / vw, c.height / vh);
-    x.drawImage(el.video, (c.width - vw * s) / 2, (c.height - vh * s) / 2, vw * s, vh * s);
-  }
-  x.drawImage(el.gl, 0, 0);
-  x.drawImage(el.hud, 0, 0);
-  c.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'papertrace.png';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast('Saved snapshot');
-  }, 'image/png');
-}
 
 /* ------------------------------------------------------------------ wire */
 function wire() {
@@ -3605,7 +3570,6 @@ function wire() {
     updateCamTransform();
     toast(state.mirrored ? 'Mirrored to match your table' : 'Mirror off');
   });
-  $('btnShot').addEventListener('click', snapshot);
 
   $('btnLock').addEventListener('click', () => {
     state.locked = !state.locked;
@@ -3676,7 +3640,6 @@ function wire() {
 buildLibrary();
 wire();
 updatePlaceInfo();
-chooseLibrary('rose');
 if (insecureContext()) $('insecure').style.display = 'block';
 showScreen('start');
 </script>
