@@ -330,6 +330,12 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 .paper .styleTile.on { border-color: var(--accent); }
 .paper .styleTile.on span { color: #26221b; }
 .paper .hero { justify-content: center; margin-top: 22px; }
+
+/* Journey screens adapt once the camera is live: the library's footer swaps
+   its onboarding links for a way back to tracing. */
+.onlyTracing { display: none; }
+body.tracing .onlyTracing { display: inline; }
+body.tracing .notTracing { display: none; }
 </style>
 </head>
 <body>
@@ -410,27 +416,12 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
     <p class="lead reveal r3">Your photo, on the paper in front of you.<br>
       Trace it with a real pencil.</p>
 
-    <ol class="steps reveal r3b">
-      <li>Choose a picture</li>
-      <li>Pick a style</li>
-      <li><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the canvas</a></li>
-      <li>Trace it</li>
-    </ol>
-
     <div id="insecure" style="display:none;background:#f6dcdc;border:1px solid #d89a9a;
          color:#5a2323;border-radius:12px;padding:14px;margin:0 0 18px;text-align:left">
       <b>The camera cannot start here.</b>
       <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. See
       <b>how it works</b> for the one-minute fix.</p>
     </div>
-
-    <div class="startActions reveal r4">
-      <button class="btn ink" id="btnStart">Choose a picture</button>
-    </div>
-
-    <p class="startFoot reveal r5">
-      <button class="linklike" id="btnHelp">how it works</button><br>
-      <span class="privacyline">Nothing leaves your device.</span></p>
   </div>
 </div>
 
@@ -440,7 +431,9 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
     <h1>Choose a picture</h1>
     <div class="lib" id="lib"></div>
     <input type="file" id="file" accept="image/*" hidden>
-    <p class="startFoot"><button class="linklike" data-close>back</button></p>
+    <p class="startFoot"><button class="linklike onlyTracing" data-close>back to tracing</button>
+      <button class="linklike notTracing" id="btnHelp">how it works</button><br>
+      <span class="privacyline notTracing">Nothing leaves your device.</span></p>
   </div>
 </div>
 
@@ -449,11 +442,23 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   <div class="inner">
     <h1>Pick a style</h1>
     <div class="styleGallery" id="stylePreviews"></div>
-    <div class="hero"><button class="btn ink" id="btnTrace">Trace it</button></div>
-    <p class="startFoot">You&rsquo;ll need the printed canvas -
-      <a class="pdflink linklike" href="papertrace-canvas-A4.pdf" target="_blank"
-         rel="noopener">print it (A4 PDF)</a><br>
-      <button class="linklike" id="btnBackToPick">choose a different picture</button></p>
+    <div class="hero"><button class="btn ink" id="btnStyleNext">Continue</button></div>
+    <p class="startFoot"><button class="linklike" id="btnBackToPick">choose a different picture</button></p>
+  </div>
+</div>
+
+<!-- ======================================================== print step -->
+<div class="screen paper" id="printstep">
+  <div class="inner">
+    <h1>Print the canvas</h1>
+    <p class="lead">One A4 page with tracking marks.<br>
+      Your picture appears inside its frame.</p>
+    <div class="hero" style="flex-direction:column;align-items:center;gap:18px">
+      <a class="btn ink pdflink" href="papertrace-canvas-A4.pdf" target="_blank"
+         rel="noopener">Print the canvas (PDF)</a>
+      <button class="btn ink" id="btnTrace">I have it &mdash; start tracing</button>
+    </div>
+    <p class="startFoot"><button class="linklike" id="btnBackToStyle">back to styles</button></p>
   </div>
 </div>
 
@@ -3573,6 +3578,7 @@ function buildHeroArt() {
 function showScreen(id) {
   hideScreens();
   $('start').classList.remove('leaving');   // e.g. camera failed mid-lift
+  document.body.classList.toggle('tracing', state.running);
   $(id).classList.add('on');
 }
 function hideScreens() {
@@ -3603,13 +3609,24 @@ function markerSvg(id, mm) {
 
 /* ------------------------------------------------------------------ wire */
 function wire() {
-  $('btnStart').addEventListener('click', () => {
-    // Lift the sheet away, then land on picture selection. The camera only
-    // starts after a picture AND style are chosen - all the heavy neural
-    // work happens before tracking ever needs the CPU.
+  // The opening is a splash: the rose draws itself, then the sheet lifts
+  // away to reveal the picture library. A tap skips straight there. The
+  // camera only starts at the end of the journey (picture -> style ->
+  // print), so all the heavy neural work happens before tracking needs
+  // the CPU.
+  let splashDone = false;
+  function leaveSplash() {
+    if (splashDone) return;
+    splashDone = true;
     $('start').classList.add('leaving');
     setTimeout(() => showScreen('pick'), 480);
-  });
+  }
+  const quickSplash = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setTimeout(leaveSplash, quickSplash ? 700 : 3400);
+  $('start').addEventListener('pointerdown', leaveSplash);
+  $('btnStyleNext').addEventListener('click', () => showScreen('printstep'));
+  $('btnBackToStyle').addEventListener('click', () => { showScreen('stylepick'); buildStylePreviews(); });
   $('btnTrace').addEventListener('click', () => {
     if (!state.running) startCamera(); else hideScreens();
   });
@@ -3619,7 +3636,7 @@ function wire() {
   $('btnHelp').addEventListener('click', () => showScreen('help'));
   $('btnHelp2').addEventListener('click', () => showScreen('help'));
   document.querySelectorAll('[data-close]').forEach((b) =>
-    b.addEventListener('click', () => { hideScreens(); if (!state.running) showScreen('start'); }));
+    b.addEventListener('click', () => { hideScreens(); if (!state.running) showScreen('pick'); }));
 
   $('btnFreeze').addEventListener('click', (e) => {
     state.freeze = !state.freeze;

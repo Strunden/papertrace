@@ -144,17 +144,19 @@ def run(headed=False):
             if not ok:
                 failures.append(name)
 
-        check("start screen visible", page.is_visible("#start h1"))
+        check("splash visible", page.is_visible("#start h1"))
         check("hero art drew itself", page.eval_on_selector_all(
             "#heroArt path", "els => els.length") > 10)
         check("no boot errors", not errors, "; ".join(errors[:3]))
 
         # --------------------------------------- setup: picture, then style
-        # The camera does NOT start yet - setup happens on full paper screens
-        # so the neural models get the CPU to themselves.
-        page.click("#btnStart")
-        page.wait_for_timeout(900)
-        check("start leads to picture selection", page.is_visible("#pick h1"))
+        # The splash auto-advances into the library; the camera does NOT
+        # start until the end of the journey.
+        try:
+            page.wait_for_selector("#pick h1", state="visible", timeout=8000)
+            check("splash reveals the picture library", True)
+        except Exception:
+            check("splash reveals the picture library", False)
         check("camera not started during setup", not page.evaluate("() => state.running"))
 
         count = page.eval_on_selector_all("#lib button", "els => els.length")
@@ -193,6 +195,11 @@ def run(headed=False):
               and not errors, "; ".join(errors[:3]))
         page.screenshot(path=os.path.join(ROOT, "build", "shot_style.png"))
 
+        # ------------------------------------------------------ print step
+        page.click("#btnStyleNext")
+        page.wait_for_timeout(300)
+        check("style continues to the print step", page.is_visible("#printstep h1"))
+
         # ---------------------------------------------------------- camera
         page.click("#btnTrace")
         page.wait_for_timeout(1500)
@@ -215,6 +222,8 @@ def run(headed=False):
         page.click("#dockPicture")
         page.wait_for_timeout(300)
         check("dock reopens picture screen", page.is_visible("#pick h1"))
+        check("library offers a way back while tracing",
+              page.is_visible("#pick [data-close]"))
         page.click("#pick [data-close]")
         page.wait_for_timeout(300)
         check("closing setup returns to camera", not page.is_visible("#pick h1"))

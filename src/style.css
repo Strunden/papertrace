@@ -320,3 +320,9 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 .paper .styleTile.on { border-color: var(--accent); }
 .paper .styleTile.on span { color: #26221b; }
 .paper .hero { justify-content: center; margin-top: 22px; }
+
+/* Journey screens adapt once the camera is live: the library's footer swaps
+   its onboarding links for a way back to tracing. */
+.onlyTracing { display: none; }
+body.tracing .onlyTracing { display: inline; }
+body.tracing .notTracing { display: none; }

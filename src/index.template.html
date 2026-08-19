@@ -88,27 +88,12 @@
     <p class="lead reveal r3">Your photo, on the paper in front of you.<br>
       Trace it with a real pencil.</p>
 
-    <ol class="steps reveal r3b">
-      <li>Choose a picture</li>
-      <li>Pick a style</li>
-      <li><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the canvas</a></li>
-      <li>Trace it</li>
-    </ol>
-
     <div id="insecure" style="display:none;background:#f6dcdc;border:1px solid #d89a9a;
          color:#5a2323;border-radius:12px;padding:14px;margin:0 0 18px;text-align:left">
       <b>The camera cannot start here.</b>
       <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. See
       <b>how it works</b> for the one-minute fix.</p>
     </div>
-
-    <div class="startActions reveal r4">
-      <button class="btn ink" id="btnStart">Choose a picture</button>
-    </div>
-
-    <p class="startFoot reveal r5">
-      <button class="linklike" id="btnHelp">how it works</button><br>
-      <span class="privacyline">Nothing leaves your device.</span></p>
   </div>
 </div>
 
@@ -118,7 +103,9 @@
     <h1>Choose a picture</h1>
     <div class="lib" id="lib"></div>
     <input type="file" id="file" accept="image/*" hidden>
-    <p class="startFoot"><button class="linklike" data-close>back</button></p>
+    <p class="startFoot"><button class="linklike onlyTracing" data-close>back to tracing</button>
+      <button class="linklike notTracing" id="btnHelp">how it works</button><br>
+      <span class="privacyline notTracing">Nothing leaves your device.</span></p>
   </div>
 </div>
 
@@ -127,11 +114,23 @@
   <div class="inner">
     <h1>Pick a style</h1>
     <div class="styleGallery" id="stylePreviews"></div>
-    <div class="hero"><button class="btn ink" id="btnTrace">Trace it</button></div>
-    <p class="startFoot">You&rsquo;ll need the printed canvas -
-      <a class="pdflink linklike" href="papertrace-canvas-A4.pdf" target="_blank"
-         rel="noopener">print it (A4 PDF)</a><br>
-      <button class="linklike" id="btnBackToPick">choose a different picture</button></p>
+    <div class="hero"><button class="btn ink" id="btnStyleNext">Continue</button></div>
+    <p class="startFoot"><button class="linklike" id="btnBackToPick">choose a different picture</button></p>
+  </div>
+</div>
+
+<!-- ======================================================== print step -->
+<div class="screen paper" id="printstep">
+  <div class="inner">
+    <h1>Print the canvas</h1>
+    <p class="lead">One A4 page with tracking marks.<br>
+      Your picture appears inside its frame.</p>
+    <div class="hero" style="flex-direction:column;align-items:center;gap:18px">
+      <a class="btn ink pdflink" href="papertrace-canvas-A4.pdf" target="_blank"
+         rel="noopener">Print the canvas (PDF)</a>
+      <button class="btn ink" id="btnTrace">I have it &mdash; start tracing</button>
+    </div>
+    <p class="startFoot"><button class="linklike" id="btnBackToStyle">back to styles</button></p>
   </div>
 </div>
 

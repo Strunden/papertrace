@@ -1525,6 +1525,7 @@ function buildHeroArt() {
 function showScreen(id) {
   hideScreens();
   $('start').classList.remove('leaving');   // e.g. camera failed mid-lift
+  document.body.classList.toggle('tracing', state.running);
   $(id).classList.add('on');
 }
 function hideScreens() {
@@ -1555,13 +1556,24 @@ function markerSvg(id, mm) {
 
 /* ------------------------------------------------------------------ wire */
 function wire() {
-  $('btnStart').addEventListener('click', () => {
-    // Lift the sheet away, then land on picture selection. The camera only
-    // starts after a picture AND style are chosen - all the heavy neural
-    // work happens before tracking ever needs the CPU.
+  // The opening is a splash: the rose draws itself, then the sheet lifts
+  // away to reveal the picture library. A tap skips straight there. The
+  // camera only starts at the end of the journey (picture -> style ->
+  // print), so all the heavy neural work happens before tracking needs
+  // the CPU.
+  let splashDone = false;
+  function leaveSplash() {
+    if (splashDone) return;
+    splashDone = true;
     $('start').classList.add('leaving');
     setTimeout(() => showScreen('pick'), 480);
-  });
+  }
+  const quickSplash = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  setTimeout(leaveSplash, quickSplash ? 700 : 3400);
+  $('start').addEventListener('pointerdown', leaveSplash);
+  $('btnStyleNext').addEventListener('click', () => showScreen('printstep'));
+  $('btnBackToStyle').addEventListener('click', () => { showScreen('stylepick'); buildStylePreviews(); });
   $('btnTrace').addEventListener('click', () => {
     if (!state.running) startCamera(); else hideScreens();
   });
@@ -1571,7 +1583,7 @@ function wire() {
   $('btnHelp').addEventListener('click', () => showScreen('help'));
   $('btnHelp2').addEventListener('click', () => showScreen('help'));
   document.querySelectorAll('[data-close]').forEach((b) =>
-    b.addEventListener('click', () => { hideScreens(); if (!state.running) showScreen('start'); }));
+    b.addEventListener('click', () => { hideScreens(); if (!state.running) showScreen('pick'); }));
 
   $('btnFreeze').addEventListener('click', (e) => {
     state.freeze = !state.freeze;
