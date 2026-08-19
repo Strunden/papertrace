@@ -70,14 +70,15 @@
       <summary class="note">Tracking</summary>
       <div class="taglist" id="taglist"></div>
       <p class="note" id="mapinfo"></p>
-      <p class="note">Sweep the phone across your tags once to learn them - after that, any one
-        tag holds the overlay in place. Two or more in view is steadier than one.</p>
+      <p class="note">The printed canvas anchors the moment a few of its marks are in view -
+        after that, any single mark keeps the picture locked to the page. Keep two or more in
+        view for the steadiest hold.</p>
       <div class="btnrow">
         <button class="btn" id="btnReset">Reset anchors</button>
         <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
       </div>
-      <p class="note"><a href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the
-        canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
+      <p class="note"><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank"
+        rel="noopener">Print the canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
         style="padding:2px 9px;font-size:12.5px">Save debug log</button></p>
     </details>
   </div>
@@ -103,7 +104,7 @@
       Trace it with a real pencil.</p>
 
     <ol class="steps reveal r3b">
-      <li>Print the canvas</li>
+      <li><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the canvas</a></li>
       <li>Choose a picture</li>
       <li>Pick a style</li>
       <li>Trace it</li>
@@ -118,8 +119,6 @@
 
     <div class="startActions reveal r4">
       <button class="btn ink" id="btnStart">Start camera</button>
-      <a class="quiet" id="pdfCanvas" href="papertrace-canvas-A4.pdf" target="_blank"
-         rel="noopener">Print the canvas &darr;</a>
     </div>
 
     <p class="startFoot reveal r5">

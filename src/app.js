@@ -314,7 +314,7 @@ async function startCameraInner() {
   resize();
   requestWakeLock();
   loop();
-  toast('Point the camera at your tags and sweep across them once');
+  toast('Point the camera at the printed canvas');
   if (!srcCanvas.width && !openTab) selectTab('image');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
@@ -516,14 +516,19 @@ function applyDetections(dets, ms, detW, stats) {
   }
   if (!res.H && !res.holding) state.pose = null;
   if (res.presetMatched) {
-    toast('Recognized the printed canvas - all ' + res.presetMatched.length + ' tags anchored instantly');
+    toast('Canvas locked');
     dlog(`PRESET MATCHED ${res.presetMatched.join(',')}  (${markerMap.size} anchored, no sweep needed)`);
     const preset = PRESET_LAYOUTS.find((p) => p.frame
       && res.presetMatched.every((id) => Object.prototype.hasOwnProperty.call(p.entries, id)));
     if (preset) state.presetFrame = preset.frame;
   } else if (res.registered && res.registered.length) {
-    toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
     dlog(`REGISTERED ${res.registered.join(',')}  (${markerMap.size} anchored)`);
+    // Canvas tags (ids 0-7) registering incrementally is a transient state
+    // on the way to preset adoption - talking about "learning" there reads
+    // as something being wrong. Only custom tag setups narrate it.
+    if (res.registered.some((id) => id > 7)) {
+      toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
+    }
   }
   if (res.dropped && res.dropped.length) {
     dlog(`DROPPED ${res.dropped.join(',')}  - kept disagreeing with the rest of the map, will relearn`);
@@ -756,15 +761,21 @@ function loop() {
 }
 
 /* ---------------------------------------------------------------- status */
+let lastStatus = '';
 function updateStatus() {
   const r = state.lastResult;
-  let cls = 'bad', text = 'Looking for tags';
+  let cls = 'bad', text = 'Looking for the canvas';
   if (state.freehand) { cls = 'warn'; text = 'Freehand (no tags)'; }
   else if (!r) { cls = 'bad'; text = 'Starting'; }
-  else if (r.tracking && r.known >= 2) { cls = 'good'; text = r.known + ' tags locked'; }
-  else if (r.tracking && r.known === 1) { cls = 'warn'; text = '1 tag - show another'; }
-  else if (r.holding) { cls = 'warn'; text = 'Holding - tags hidden'; }
-  else if (markerMap.size) { cls = 'bad'; text = 'Tags lost'; }
+  else if (r.tracking && markerMap.presetAdopted) { cls = 'good'; text = 'Canvas locked'; }
+  else if (r.tracking && r.known >= 2) { cls = 'good'; text = r.known + ' marks locked'; }
+  else if (r.tracking && r.known === 1) { cls = 'warn'; text = 'One mark - show another'; }
+  else if (r.holding) { cls = 'warn'; text = 'Holding - marks hidden'; }
+  else if (markerMap.size) { cls = 'bad'; text = 'Marks lost'; }
+  // Same-value DOM writes still dirty layout - this runs every frame.
+  const sig = cls + '|' + text;
+  if (sig === lastStatus) return;
+  lastStatus = sig;
   el.statusDot.className = 'dot ' + cls;
   el.status.textContent = text;
 }
@@ -1125,7 +1136,7 @@ async function commitCrop() {
     // the queue now, and let it auto-apply Artist sketch when ready (unless
     // the user picks a style themselves first).
     state.autoStyle = true;
-    ensureAllNeuralMaps();
+    ensureAllNeuralMaps(['artist']);
   } finally {
     busy(false);
   }
@@ -1291,12 +1302,12 @@ async function ensureNeuralMap(kind, quiet) {
 // previews. Models still download only once (Cache Storage) and only when
 // an image is actually loaded with the Style tab open.
 let neuralQueueRunning = false;
-async function ensureAllNeuralMaps() {
+async function ensureAllNeuralMaps(kinds) {
   if (neuralQueueRunning || !srcCanvas.width) return;
   neuralQueueRunning = true;
   try {
     let announced = false;
-    for (const kind of Object.keys(NEURAL_CFG)) {
+    for (const kind of (kinds || Object.keys(NEURAL_CFG))) {
       if (neuralMaps[kind]) continue;
       if (!announced) {
         toast('Preparing style previews - each model downloads once', 3500);
@@ -1476,7 +1487,7 @@ function updateTagPanel() {
     `${markerMap.size} anchored · fit error ${q} · detector ${state.detW}px `
     + `· ${state.detectMs.toFixed(0)}ms · ${state.fps.toFixed(0)} fps`;
 }
-setInterval(() => { if (state.running) updateTagPanel(); }, 600);
+setInterval(() => { if (state.running && openTab === 'place') updateTagPanel(); }, 600);
 
 /* tabs */
 let openTab = null;
@@ -1648,6 +1659,29 @@ function wire() {
   window.addEventListener('resize', () => { if (cropSrc) { clampCropPan(); renderCrop(); } });
 
   buildHeroArt();
+  // In an iOS home-screen app, target=_blank opens the PDF in a chromeless
+  // full-screen view with no way back - a trap. Hand it to the share sheet
+  // instead (which has Print and Save to Files built in).
+  document.querySelectorAll('.pdflink').forEach((a) => {
+    a.addEventListener('click', async (e) => {
+      if (!navigator.standalone) return;      // normal browser: just a link
+      e.preventDefault();
+      try {
+        const resp = await fetch(a.getAttribute('href'));
+        const file = new File([await resp.blob()], 'papertrace-canvas.pdf',
+                              { type: 'application/pdf' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'PaperTrace canvas' });
+        } else {
+          toast('Open strunden.github.io/papertrace in Safari to print the canvas', 4500);
+        }
+      } catch (err) {
+        if (err && err.name !== 'AbortError') {
+          toast('Open strunden.github.io/papertrace in Safari to print the canvas', 4500);
+        }
+      }
+    });
+  });
   $('btnDebugLog').addEventListener('click', saveDebugLog);
 }
 

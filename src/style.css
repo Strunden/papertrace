@@ -270,11 +270,14 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 #start .steps { list-style: none; counter-reset: st; padding: 0; margin: 0 0 30px;
   display: inline-block; text-align: left; }
 #start .steps li {
-  counter-increment: st; font-size: 15.5px; color: #55503f; margin: 7px 0;
+  counter-increment: st; font-size: 15.5px; color: #55503f; margin: 9px 0;
+  display: flex; align-items: center;
 }
+#start .steps a { color: #26221b; text-decoration: underline;
+  text-underline-offset: 3px; }
 #start .steps li::before {
-  content: counter(st); display: inline-block; width: 22px; height: 22px;
-  line-height: 22px; margin-right: 10px; border-radius: 50%;
+  content: counter(st); flex: none; width: 22px; height: 22px;
+  line-height: 22px; text-align: center; margin-right: 10px; border-radius: 50%;
   border: 1px solid #c9bfa6; color: #8a8168; font-size: 12px;
   font-family: "Iowan Old Style", Palatino, Georgia, serif;
 }

@@ -329,6 +329,41 @@ function runTrackerTests(dict) {
         `presetMatched=${JSON.stringify(res.presetMatched)}, map size ${mm.size}/8, err ${res.err ? res.err.toFixed(2) : 'n/a'}px`);
   }
 
+  // Regression: a phone that starts close to the paper learns tags 0 and 1
+  // incrementally (seed + one registration) BEFORE three tags are ever in
+  // view together. The old map.size <= 1 gate then locked the preset out
+  // forever - no printed frame, tag-bounds placement, single-tag wobble.
+  // The preset must be able to take over an incrementally-built map.
+  {
+    const det = new MarkerDetector(dict);
+    const mm = new MarkerMap();
+    const Wc = 640, Hc = 640;
+    // phase 1: only the top corners visible - normal incremental learning.
+    // The view must actually move between frames or _viewMoved rejects the
+    // repeat sightings registration needs.
+    const topPair = CANVAS8.filter((m) => m.id === 0 || m.id === 4);
+    for (let i = 0; i < 12; i++) {
+      const t = i / 12;
+      const Ht1 = viewHomography(Wc, Hc,
+        0.0001 + 0.0002 * Math.sin(t * 5), -0.0001 + 0.0002 * Math.cos(t * 4),
+        2.4 + 0.2 * Math.sin(t * 3),
+        -15.5 * 2.6 + 18 * Math.sin(t * 6), -172.2 * 2.6 + 14 * Math.cos(t * 5),
+        0.02 + 0.05 * Math.sin(t * 4));
+      mm.update(det.detect(renderScene({ w: Wc, h: Hc, H: Ht1, markers: topPair, dict, blur: 0.5, noise: 1.2 }), Wc, Hc));
+    }
+    const learned = mm.size;
+    // phase 2: pull back - four corners in view at once
+    const corners = CANVAS8.filter((m) => m.id <= 3);
+    const Ht2 = viewHomography(Wc, Hc, 0.0001, -0.0001, 2.0, -50.8 * 2.0, -76.2 * 2.0, 0.02);
+    let res = null;
+    for (let i = 0; i < 4 && !(res && res.presetMatched); i++) {
+      res = mm.update(det.detect(renderScene({ w: Wc, h: Hc, H: Ht2, markers: corners, dict, blur: 0.5, noise: 1.2 }), Wc, Hc));
+    }
+    log('preset takes over an incrementally-learned map',
+        learned >= 2 && !!(res && res.presetMatched) && mm.size === 8,
+        `learned ${learned} first, then presetMatched=${JSON.stringify(res && res.presetMatched)}, map size ${mm.size}/8`);
+  }
+
   // Regression test for the exact vulnerability the crash above uncovered:
   // 2 tags reusing preset IDs, but in a totally different real arrangement,
   // must NOT trigger the preset - a homography from exactly 2 quads to any

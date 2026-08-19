@@ -110,6 +110,7 @@ class MarkerMap {
     this.lost = Infinity;
     this.quality = 0;
     this.seedId = null;
+    this.presetAdopted = false;  // known-layout canvas locked in
     this.lastProj = null;
     this.motion = 0;
     this.rejects = 0;
@@ -238,10 +239,31 @@ class MarkerMap {
    * that reused these IDs for a completely different layout and still
    * passed a 2-tag check.)
    */
-  _tryPreset(usable) {
+  _tryPreset(usable, minSeen) {
     for (const preset of PRESET_LAYOUTS) {
       const seen = usable.filter((d) => Object.prototype.hasOwnProperty.call(preset.entries, d.id));
-      if (seen.length < 3) continue;
+      if (seen.length < (minSeen || 3)) continue;
+      // Collinear tags verify nothing: three equally spaced tags in a row
+      // fit the canvas's own top edge perfectly even when they belong to a
+      // completely different arrangement. Demand real 2D spread - the max
+      // triangle area over the detected centres must be a meaningful
+      // fraction of the bounding span squared.
+      const cs = seen.map((d) => [
+        (d.corners[0][0] + d.corners[1][0] + d.corners[2][0] + d.corners[3][0]) / 4,
+        (d.corners[0][1] + d.corners[1][1] + d.corners[2][1] + d.corners[3][1]) / 4,
+      ]);
+      let span = 0, maxArea = 0;
+      for (let a = 0; a < cs.length; a++) {
+        for (let b = a + 1; b < cs.length; b++) {
+          span = Math.max(span, Math.hypot(cs[a][0] - cs[b][0], cs[a][1] - cs[b][1]));
+          for (let c = b + 1; c < cs.length; c++) {
+            maxArea = Math.max(maxArea, Math.abs(
+              (cs[b][0] - cs[a][0]) * (cs[c][1] - cs[a][1])
+            - (cs[c][0] - cs[a][0]) * (cs[b][1] - cs[a][1])) / 2);
+          }
+        }
+      }
+      if (!(span > 0) || maxArea / (span * span) < 0.05) continue;
       const staged = new Map();
       for (const [id, e] of Object.entries(preset.entries)) {
         staged.set(Number(id), { ...e, wsum: Infinity, bad: 0, seed: true });
@@ -418,9 +440,19 @@ class MarkerMap {
     // below. Checked unconditionally (not just when nothing is known this
     // frame), because the original seed tag is often still visible when the
     // second one first appears.
-    if (this.map.size <= 1 && usable.length >= 2) {
-      const preset = this._tryPreset(usable);
+    // Try the known canvas layout whenever 3+ of its tags are in view and it
+    // hasn't been adopted yet - even if some tags were already learned
+    // incrementally. A phone that starts close to the paper seeds one tag,
+    // then registers a second, and the old map.size <= 1 gate then locked
+    // the preset out forever: no printed frame, tag-bounds placement, and
+    // single-tag wobble. The preset's geometric verification is what
+    // guards against false adoption, not the map size.
+    if (!this.presetAdopted && usable.length >= 3) {
+      // Overriding a map that was already learned incrementally needs a
+      // higher bar than seeding an empty one: 4+ preset tags in view.
+      const preset = this._tryPreset(usable, this.map.size > 1 ? 4 : 3);
       if (preset) {
+        this.presetAdopted = true;
         this.map = preset;
         known = usable.filter((d) => this.map.has(d.id));
         presetMatched = [...this.map.keys()];

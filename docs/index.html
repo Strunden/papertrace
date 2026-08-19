@@ -280,11 +280,14 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 #start .steps { list-style: none; counter-reset: st; padding: 0; margin: 0 0 30px;
   display: inline-block; text-align: left; }
 #start .steps li {
-  counter-increment: st; font-size: 15.5px; color: #55503f; margin: 7px 0;
+  counter-increment: st; font-size: 15.5px; color: #55503f; margin: 9px 0;
+  display: flex; align-items: center;
 }
+#start .steps a { color: #26221b; text-decoration: underline;
+  text-underline-offset: 3px; }
 #start .steps li::before {
-  content: counter(st); display: inline-block; width: 22px; height: 22px;
-  line-height: 22px; margin-right: 10px; border-radius: 50%;
+  content: counter(st); flex: none; width: 22px; height: 22px;
+  line-height: 22px; text-align: center; margin-right: 10px; border-radius: 50%;
   border: 1px solid #c9bfa6; color: #8a8168; font-size: 12px;
   font-family: "Iowan Old Style", Palatino, Georgia, serif;
 }
@@ -368,14 +371,15 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       <summary class="note">Tracking</summary>
       <div class="taglist" id="taglist"></div>
       <p class="note" id="mapinfo"></p>
-      <p class="note">Sweep the phone across your tags once to learn them - after that, any one
-        tag holds the overlay in place. Two or more in view is steadier than one.</p>
+      <p class="note">The printed canvas anchors the moment a few of its marks are in view -
+        after that, any single mark keeps the picture locked to the page. Keep two or more in
+        view for the steadiest hold.</p>
       <div class="btnrow">
         <button class="btn" id="btnReset">Reset anchors</button>
         <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
       </div>
-      <p class="note"><a href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the
-        canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
+      <p class="note"><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank"
+        rel="noopener">Print the canvas (A4 PDF)</a> &nbsp;·&nbsp; <button class="btn" id="btnDebugLog"
         style="padding:2px 9px;font-size:12.5px">Save debug log</button></p>
     </details>
   </div>
@@ -401,7 +405,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
       Trace it with a real pencil.</p>
 
     <ol class="steps reveal r3b">
-      <li>Print the canvas</li>
+      <li><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the canvas</a></li>
       <li>Choose a picture</li>
       <li>Pick a style</li>
       <li>Trace it</li>
@@ -416,8 +420,6 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 
     <div class="startActions reveal r4">
       <button class="btn ink" id="btnStart">Start camera</button>
-      <a class="quiet" id="pdfCanvas" href="papertrace-canvas-A4.pdf" target="_blank"
-         rel="noopener">Print the canvas &darr;</a>
     </div>
 
     <p class="startFoot reveal r5">
@@ -1297,6 +1299,7 @@ class MarkerMap {
     this.lost = Infinity;
     this.quality = 0;
     this.seedId = null;
+    this.presetAdopted = false;  // known-layout canvas locked in
     this.lastProj = null;
     this.motion = 0;
     this.rejects = 0;
@@ -1425,10 +1428,31 @@ class MarkerMap {
    * that reused these IDs for a completely different layout and still
    * passed a 2-tag check.)
    */
-  _tryPreset(usable) {
+  _tryPreset(usable, minSeen) {
     for (const preset of PRESET_LAYOUTS) {
       const seen = usable.filter((d) => Object.prototype.hasOwnProperty.call(preset.entries, d.id));
-      if (seen.length < 3) continue;
+      if (seen.length < (minSeen || 3)) continue;
+      // Collinear tags verify nothing: three equally spaced tags in a row
+      // fit the canvas's own top edge perfectly even when they belong to a
+      // completely different arrangement. Demand real 2D spread - the max
+      // triangle area over the detected centres must be a meaningful
+      // fraction of the bounding span squared.
+      const cs = seen.map((d) => [
+        (d.corners[0][0] + d.corners[1][0] + d.corners[2][0] + d.corners[3][0]) / 4,
+        (d.corners[0][1] + d.corners[1][1] + d.corners[2][1] + d.corners[3][1]) / 4,
+      ]);
+      let span = 0, maxArea = 0;
+      for (let a = 0; a < cs.length; a++) {
+        for (let b = a + 1; b < cs.length; b++) {
+          span = Math.max(span, Math.hypot(cs[a][0] - cs[b][0], cs[a][1] - cs[b][1]));
+          for (let c = b + 1; c < cs.length; c++) {
+            maxArea = Math.max(maxArea, Math.abs(
+              (cs[b][0] - cs[a][0]) * (cs[c][1] - cs[a][1])
+            - (cs[c][0] - cs[a][0]) * (cs[b][1] - cs[a][1])) / 2);
+          }
+        }
+      }
+      if (!(span > 0) || maxArea / (span * span) < 0.05) continue;
       const staged = new Map();
       for (const [id, e] of Object.entries(preset.entries)) {
         staged.set(Number(id), { ...e, wsum: Infinity, bad: 0, seed: true });
@@ -1605,9 +1629,19 @@ class MarkerMap {
     // below. Checked unconditionally (not just when nothing is known this
     // frame), because the original seed tag is often still visible when the
     // second one first appears.
-    if (this.map.size <= 1 && usable.length >= 2) {
-      const preset = this._tryPreset(usable);
+    // Try the known canvas layout whenever 3+ of its tags are in view and it
+    // hasn't been adopted yet - even if some tags were already learned
+    // incrementally. A phone that starts close to the paper seeds one tag,
+    // then registers a second, and the old map.size <= 1 gate then locked
+    // the preset out forever: no printed frame, tag-bounds placement, and
+    // single-tag wobble. The preset's geometric verification is what
+    // guards against false adoption, not the map size.
+    if (!this.presetAdopted && usable.length >= 3) {
+      // Overriding a map that was already learned incrementally needs a
+      // higher bar than seeding an empty one: 4+ preset tags in view.
+      const preset = this._tryPreset(usable, this.map.size > 1 ? 4 : 3);
       if (preset) {
+        this.presetAdopted = true;
         this.map = preset;
         known = usable.filter((d) => this.map.has(d.id));
         presetMatched = [...this.map.keys()];
@@ -2299,7 +2333,7 @@ async function startCameraInner() {
   resize();
   requestWakeLock();
   loop();
-  toast('Point the camera at your tags and sweep across them once');
+  toast('Point the camera at the printed canvas');
   if (!srcCanvas.width && !openTab) selectTab('image');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
@@ -2501,14 +2535,19 @@ function applyDetections(dets, ms, detW, stats) {
   }
   if (!res.H && !res.holding) state.pose = null;
   if (res.presetMatched) {
-    toast('Recognized the printed canvas - all ' + res.presetMatched.length + ' tags anchored instantly');
+    toast('Canvas locked');
     dlog(`PRESET MATCHED ${res.presetMatched.join(',')}  (${markerMap.size} anchored, no sweep needed)`);
     const preset = PRESET_LAYOUTS.find((p) => p.frame
       && res.presetMatched.every((id) => Object.prototype.hasOwnProperty.call(p.entries, id)));
     if (preset) state.presetFrame = preset.frame;
   } else if (res.registered && res.registered.length) {
-    toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
     dlog(`REGISTERED ${res.registered.join(',')}  (${markerMap.size} anchored)`);
+    // Canvas tags (ids 0-7) registering incrementally is a transient state
+    // on the way to preset adoption - talking about "learning" there reads
+    // as something being wrong. Only custom tag setups narrate it.
+    if (res.registered.some((id) => id > 7)) {
+      toast('Learned tag ' + res.registered.join(', ') + '  (' + markerMap.size + ' anchored)');
+    }
   }
   if (res.dropped && res.dropped.length) {
     dlog(`DROPPED ${res.dropped.join(',')}  - kept disagreeing with the rest of the map, will relearn`);
@@ -2741,15 +2780,21 @@ function loop() {
 }
 
 /* ---------------------------------------------------------------- status */
+let lastStatus = '';
 function updateStatus() {
   const r = state.lastResult;
-  let cls = 'bad', text = 'Looking for tags';
+  let cls = 'bad', text = 'Looking for the canvas';
   if (state.freehand) { cls = 'warn'; text = 'Freehand (no tags)'; }
   else if (!r) { cls = 'bad'; text = 'Starting'; }
-  else if (r.tracking && r.known >= 2) { cls = 'good'; text = r.known + ' tags locked'; }
-  else if (r.tracking && r.known === 1) { cls = 'warn'; text = '1 tag - show another'; }
-  else if (r.holding) { cls = 'warn'; text = 'Holding - tags hidden'; }
-  else if (markerMap.size) { cls = 'bad'; text = 'Tags lost'; }
+  else if (r.tracking && markerMap.presetAdopted) { cls = 'good'; text = 'Canvas locked'; }
+  else if (r.tracking && r.known >= 2) { cls = 'good'; text = r.known + ' marks locked'; }
+  else if (r.tracking && r.known === 1) { cls = 'warn'; text = 'One mark - show another'; }
+  else if (r.holding) { cls = 'warn'; text = 'Holding - marks hidden'; }
+  else if (markerMap.size) { cls = 'bad'; text = 'Marks lost'; }
+  // Same-value DOM writes still dirty layout - this runs every frame.
+  const sig = cls + '|' + text;
+  if (sig === lastStatus) return;
+  lastStatus = sig;
   el.statusDot.className = 'dot ' + cls;
   el.status.textContent = text;
 }
@@ -3110,7 +3155,7 @@ async function commitCrop() {
     // the queue now, and let it auto-apply Artist sketch when ready (unless
     // the user picks a style themselves first).
     state.autoStyle = true;
-    ensureAllNeuralMaps();
+    ensureAllNeuralMaps(['artist']);
   } finally {
     busy(false);
   }
@@ -3276,12 +3321,12 @@ async function ensureNeuralMap(kind, quiet) {
 // previews. Models still download only once (Cache Storage) and only when
 // an image is actually loaded with the Style tab open.
 let neuralQueueRunning = false;
-async function ensureAllNeuralMaps() {
+async function ensureAllNeuralMaps(kinds) {
   if (neuralQueueRunning || !srcCanvas.width) return;
   neuralQueueRunning = true;
   try {
     let announced = false;
-    for (const kind of Object.keys(NEURAL_CFG)) {
+    for (const kind of (kinds || Object.keys(NEURAL_CFG))) {
       if (neuralMaps[kind]) continue;
       if (!announced) {
         toast('Preparing style previews - each model downloads once', 3500);
@@ -3461,7 +3506,7 @@ function updateTagPanel() {
     `${markerMap.size} anchored · fit error ${q} · detector ${state.detW}px `
     + `· ${state.detectMs.toFixed(0)}ms · ${state.fps.toFixed(0)} fps`;
 }
-setInterval(() => { if (state.running) updateTagPanel(); }, 600);
+setInterval(() => { if (state.running && openTab === 'place') updateTagPanel(); }, 600);
 
 /* tabs */
 let openTab = null;
@@ -3633,6 +3678,29 @@ function wire() {
   window.addEventListener('resize', () => { if (cropSrc) { clampCropPan(); renderCrop(); } });
 
   buildHeroArt();
+  // In an iOS home-screen app, target=_blank opens the PDF in a chromeless
+  // full-screen view with no way back - a trap. Hand it to the share sheet
+  // instead (which has Print and Save to Files built in).
+  document.querySelectorAll('.pdflink').forEach((a) => {
+    a.addEventListener('click', async (e) => {
+      if (!navigator.standalone) return;      // normal browser: just a link
+      e.preventDefault();
+      try {
+        const resp = await fetch(a.getAttribute('href'));
+        const file = new File([await resp.blob()], 'papertrace-canvas.pdf',
+                              { type: 'application/pdf' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'PaperTrace canvas' });
+        } else {
+          toast('Open strunden.github.io/papertrace in Safari to print the canvas', 4500);
+        }
+      } catch (err) {
+        if (err && err.name !== 'AbortError') {
+          toast('Open strunden.github.io/papertrace in Safari to print the canvas', 4500);
+        }
+      }
+    });
+  });
   $('btnDebugLog').addEventListener('click', saveDebugLog);
 }
 
