@@ -1161,8 +1161,7 @@ const NEURAL_CFG = {
   artist:   { file: 'lineart.onnx',  size: '~28 MB', snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
   rough:    { file: 'rough.onnx',    size: '~16 MB', snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
   ink:      { file: 'inkbrush.onnx', size: '~4 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb' },
-  painting: { file: 'painting.onnx', size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
-  vivid:    { file: 'vivid.onnx',    size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
+  painting: { file: 'vivid.onnx',    size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
   paprika:  { file: 'paprika.onnx',  size: '~9 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
 };
 let neuralMaps = {};         // preset id -> ink {data,w,h} or rgb {chans,w,h}
@@ -1352,6 +1351,26 @@ function buildLibrary() {
     b.addEventListener('click', () => chooseLibrary(key));
     el.lib.appendChild(b);
   }
+  // A bundled sample photo exercises the full photo pipeline (crop, neural
+  // styles) with one tap - handy for trying the app without the phone.
+  const sample = document.createElement('button');
+  sample.dataset.key = 'samplePhoto';
+  sample.title = 'Sample photo';
+  sample.innerHTML = '<img src="sample.jpg" alt="Sample photo">';
+  sample.addEventListener('click', async () => {
+    busy(true);
+    try {
+      const resp = await fetch('sample.jpg');
+      const blob = await resp.blob();
+      state.selected = 'samplePhoto';
+      markSelected();
+      await loadUserFile(new File([blob], 'sample.jpg', { type: 'image/jpeg' }));
+    } catch (e) {
+      toast('Could not load the sample photo');
+    } finally { busy(false); }
+  });
+  el.lib.appendChild(sample);
+
   const add = document.createElement('button');
   add.className = 'add';
   add.innerHTML = '<div>+<br>Your<br>image</div>';
