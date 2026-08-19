@@ -1360,35 +1360,45 @@ async function restyle(showBusy, quick) {
 }
 
 /* ------------------------------------------------------------------- UI */
+// Curated starting points, all public domain, chosen to suit the paper-and-
+// ink look: things people actually want to trace. Each goes through the same
+// crop -> neural styles pipeline as an uploaded photo.
+const STARTERS = [
+  { key: 'daisy',   file: 'start-daisy.jpg',   label: 'Daisy' },
+  { key: 'lily',    file: 'start-lily.jpg',    label: 'Stargazer lily' },
+  { key: 'forest',  file: 'start-forest.jpg',  label: 'Forest path' },
+  { key: 'vangogh', file: 'start-vangogh.jpg', label: 'Van Gogh (1887)' },
+];
+
 function buildLibrary() {
   el.lib.innerHTML = '';
-  for (const [key, f] of Object.entries(FLOWERS)) {
+  // one line-art flower - the rose from the opening; already traceable as-is
+  const rose = document.createElement('button');
+  rose.dataset.key = 'rose';
+  rose.title = FLOWERS.rose.label;
+  rose.innerHTML = FLOWERS.rose.svg;
+  rose.addEventListener('click', () => chooseLibrary('rose'));
+  el.lib.appendChild(rose);
+
+  for (const st of STARTERS) {
     const b = document.createElement('button');
-    b.dataset.key = key;
-    b.title = f.label;
-    b.innerHTML = f.svg;
-    b.addEventListener('click', () => chooseLibrary(key));
+    b.dataset.key = st.key;
+    b.title = st.label;
+    b.innerHTML = `<img src="${st.file}" alt="${st.label}">`;
+    b.addEventListener('click', async () => {
+      busy(true);
+      try {
+        const resp = await fetch(st.file);
+        const blob = await resp.blob();
+        state.selected = st.key;
+        markSelected();
+        await loadUserFile(new File([blob], st.file, { type: 'image/jpeg' }));
+      } catch (e) {
+        toast('Could not load that picture');
+      } finally { busy(false); }
+    });
     el.lib.appendChild(b);
   }
-  // A bundled sample photo exercises the full photo pipeline (crop, neural
-  // styles) with one tap - handy for trying the app without the phone.
-  const sample = document.createElement('button');
-  sample.dataset.key = 'samplePhoto';
-  sample.title = 'Sample photo';
-  sample.innerHTML = '<img src="sample.jpg" alt="Sample photo">';
-  sample.addEventListener('click', async () => {
-    busy(true);
-    try {
-      const resp = await fetch('sample.jpg');
-      const blob = await resp.blob();
-      state.selected = 'samplePhoto';
-      markSelected();
-      await loadUserFile(new File([blob], 'sample.jpg', { type: 'image/jpeg' }));
-    } catch (e) {
-      toast('Could not load the sample photo');
-    } finally { busy(false); }
-  });
-  el.lib.appendChild(sample);
 
   const add = document.createElement('button');
   add.className = 'add';
@@ -1546,17 +1556,7 @@ function markerSvg(id, mm) {
        + `<g transform="translate(${quiet},${quiet})">${cells}</g></svg>`;
 }
 
-function buildPrintSheet() {
-  const size = Number($('tagSize').value);
-  const wrap = $('tagwrap');
-  wrap.innerHTML = '';
-  for (let i = 0; i < DICT.codes.length; i++) {
-    const d = document.createElement('div');
-    d.className = 'tagcell';
-    d.innerHTML = markerSvg(i, size) + `<b>tag ${i}</b>`;
-    wrap.appendChild(d);
-  }
-}
+
 
 /* -------------------------------------------------------------- snapshot */
 function snapshot() {
@@ -1694,22 +1694,7 @@ function wire() {
   $('btnCropUse').addEventListener('click', commitCrop);
   window.addEventListener('resize', () => { if (cropSrc) { clampCropPan(); renderCrop(); } });
 
-  $('btnTags').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
   buildHeroArt();
-  if (/^(en-(US|CA|PH)|es-MX)/.test(navigator.language)) {
-    $('pdfCanvas').href = 'papertrace-canvas-Letter.pdf';
-  }
-  $('btnTags2').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
-  $('tagSize').addEventListener('change', buildPrintSheet);
-  $('btnPrint').addEventListener('click', () => {
-    // iOS home-screen apps silently ignore window.print() - the button
-    // "did nothing" and the screen felt stuck. Steer to the PDF instead.
-    if (navigator.standalone) {
-      toast('Printing is not available from the home-screen app - open the canvas PDF instead (link below)', 4500);
-      return;
-    }
-    window.print();
-  });
   $('btnDebugLog').addEventListener('click', saveDebugLog);
 }
 

@@ -184,8 +184,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 .screen .inner { max-width: 620px; margin: 0 auto; }
 .screen h1 { font-size: 34px; margin: 0 0 8px; letter-spacing: -.01em;
   font-family: "Iowan Old Style", Palatino, Georgia, serif; }
-.printbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
-  gap: 10px; flex-wrap: wrap; background: #fff; padding: 10px 0; margin-bottom: 8px; }
+
 .screen h2 { font-size: 15px; margin: 26px 0 8px; }
 .screen p, .screen li { color: #c8cfdb; font-size: 14.5px; }
 .screen li { margin-bottom: 6px; }
@@ -221,22 +220,6 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 }
 #cropBar .note { color: #fff; text-align: center; margin-bottom: 12px; }
 #cropBar .hero { justify-content: center; margin: 0; }
-
-/* -------------------------------------------------------- printable tags */
-#printsheet { background: #fff; color: #000; }
-#printsheet .inner { max-width: 900px; }
-#printsheet h1, #printsheet h2, #printsheet p, #printsheet li { color: #111; }
-.tagwrap { display: flex; flex-wrap: wrap; gap: 4mm; margin-top: 6mm; }
-.tagcell { text-align: center; }
-.tagcell svg { display: block; background: #fff; }
-.tagcell b { font: 500 8pt sans-serif; color: #777; }
-
-@media print {
-  body > *:not(#printsheet) { display: none !important; }
-  #printsheet { position: static; display: block !important; padding: 0; }
-  #printsheet .noprint { display: none !important; }
-  .tagcell { break-inside: avoid; }
-}
 
 /* ------------------------------------------------- the paper opening */
 /* The start screen is a sheet of warm paper: a rose draws itself in ink,

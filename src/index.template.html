@@ -34,9 +34,8 @@
     <div class="lib" id="lib"></div>
     <input type="file" id="file" accept="image/*" hidden>
     <p class="note" style="margin-top:12px">
-      Built-in flowers are vector drawings, so they stay sharp however far you zoom in.
-      Any photo or drawing you load gets the same trace styles applied.
-    </p>
+      Tap a picture to start - it gets drawn as traceable lines, right on your paper.
+      Or load one of your own photos.</p>
   </div>
 
   <!-- ------------------------------------------------------------ style -->
@@ -87,11 +86,9 @@
       <label class="toggle" style="margin:0 0 0 4px"><input type="checkbox" id="freehand"> Freehand (no tags)</label>
     </div>
     <details>
-      <summary class="note">Printing tags, or tracking not working?</summary>
-      <p class="note">Ready-to-draw canvas (tags pre-placed, frame in the middle):
-        <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4</a>
-        · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter</a>
-        &nbsp;·&nbsp; <button class="btn" id="btnTags2" style="padding:2px 9px;font-size:12.5px">cut-out tag sheet</button></p>
+      <summary class="note">Need the canvas, or tracking not working?</summary>
+      <p class="note"><a href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the
+        canvas (A4 PDF)</a> - tracking marks pre-placed, frame in the middle.</p>
       <p class="note">If tags won't anchor: <button class="btn" id="btnDebugLog" style="padding:2px 9px;font-size:12.5px">Save debug log</button>
         after pointing the camera at them a few seconds - a text file of what was seen and why each
         tag did or didn't register. Stays on your device unless you share it.</p>
@@ -131,8 +128,7 @@
     </div>
 
     <p class="startFoot reveal r4">
-      <button class="linklike" id="btnTags">cut-out tags</button>
-      &nbsp;·&nbsp; <button class="linklike" id="btnHelp">how it works</button><br>
+      <button class="linklike" id="btnHelp">how it works</button><br>
       <span class="privacyline">Nothing leaves your device.</span></p>
   </div>
 </div>
@@ -231,35 +227,6 @@
       <button class="btn primary" data-close>Back</button>
       <button class="btn" id="btnHelp2b" onclick="document.getElementById('btnHelp').click()">Full help</button>
     </div>
-  </div>
-</div>
-
-<!-- ======================================================== tag sheet -->
-<div class="screen" id="printsheet">
-  <div class="inner">
-    <div class="noprint">
-      <div class="printbar">
-        <button class="btn" data-close>&larr; Back</button>
-        <button class="btn primary" id="btnPrint">Print</button>
-        <label>Tag size&nbsp;
-          <select id="tagSize" style="padding:8px;border-radius:8px">
-            <option value="20">20 mm - sketchbook</option>
-            <option value="30" selected>30 mm - A4 on a desk</option>
-            <option value="45">45 mm - easel</option>
-          </select>
-        </label>
-      </div>
-      <h1>Tracking tags</h1>
-      <p class="lead">Print at 100% scale, cut along the outside of the white border, and stick
-        3-6 of them around your drawing area. Keep the white border - the tracker needs it.</p>
-      <p class="note" style="color:#555">Every tag carries a different number. Mixing sizes is
-        fine - just never put two copies of the same number in view at once.</p>
-      <p class="note" style="color:#555">Don't want to cut these out? Download a ready-to-draw
-        canvas instead - tags pre-placed, postcard-sized frame in the middle:
-        <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">A4 PDF</a>
-        · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">Letter PDF</a>.</p>
-    </div>
-    <div class="tagwrap" id="tagwrap"></div>
   </div>
 </div>
 
