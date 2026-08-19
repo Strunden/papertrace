@@ -919,6 +919,24 @@ function loadImageEl(src) {
   });
 }
 
+/**
+ * Picking a new image is a strong, explicit "start over" action - it should
+ * always end up placed on the page, regardless of whatever placement state
+ * a *previous* image was left in. Without this, restyle()'s own re-fit is
+ * indirect and gated behind !state.userPlaced: if the user ever tapped
+ * Rotate/Mirror on an earlier image, userPlaced stays true forever and a
+ * freshly loaded image silently never gets placed at all - "downstream
+ * nothing happens", even though the texture itself loaded fine.
+ */
+function placeNewImage() {
+  state.userPlaced = false;
+  state.fitSig = '';
+  if (state.pose) {
+    if (state.presetFrame) fitToFrame(state.presetFrame); else fitToTags();
+    state.placed = true;
+  }
+}
+
 async function chooseLibrary(key) {
   const f = FLOWERS[key];
   if (!f) return;
@@ -929,6 +947,7 @@ async function chooseLibrary(key) {
     state.selected = key;
     markSelected();
     await restyle(true);
+    placeNewImage();
   } finally { busy(false); }
 }
 
@@ -1095,6 +1114,7 @@ async function commitCrop() {
     state.selected = null;
     markSelected();
     await restyle(true);
+    placeNewImage();
     toast('Loaded ' + cropSrc.name);
   } finally {
     busy(false);
