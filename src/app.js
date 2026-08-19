@@ -1165,6 +1165,7 @@ const NEURAL_CFG = {
   ink:      { file: 'inkbrush.onnx', size: '~4 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb' },
   painting: { file: 'painting.onnx', size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
   vivid:    { file: 'vivid.onnx',    size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
+  paprika:  { file: 'paprika.onnx',  size: '~9 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
 };
 let neuralMaps = {};         // preset id -> ink {data,w,h} or rgb {chans,w,h}
 let neuralBusy = false;
