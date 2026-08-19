@@ -1,6 +1,6 @@
 :root {
   --bg: #0d0f13;
-  --panel: rgba(20, 23, 30, 0.94);
+  --panel: rgb(22, 25, 32);   /* solid: translucent blur ghosts on iOS over transformed layers */
   --line: rgba(255, 255, 255, 0.13);
   --text: #f2f4f8;
   --dim: #9aa3b2;
@@ -48,7 +48,6 @@ html, body {
   display: inline-flex; align-items: center; gap: 7px;
   background: var(--panel); border: 1px solid var(--line);
   border-radius: 999px; padding: 7px 13px; font-size: 13px;
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
 .dot.good { background: var(--good); box-shadow: 0 0 8px var(--good); }
@@ -61,7 +60,6 @@ html, body {
   width: 40px; height: 40px; flex: none; display: grid; place-items: center;
   background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
   color: var(--text); font-size: 17px; cursor: pointer;
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .iconbtn.on { background: var(--accent); color: #221503; border-color: transparent; }
 .iconbtn:disabled { opacity: .35; }
@@ -76,7 +74,6 @@ html, body {
   flex: 1; max-width: 130px; padding: 12px 6px; border-radius: 999px;
   background: var(--panel); border: 1px solid var(--line); color: var(--text);
   font-size: 13px; font-weight: 600; letter-spacing: .01em; cursor: pointer;
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .tab.on { background: var(--accent); color: #221503; border-color: transparent; }
 
@@ -87,7 +84,6 @@ html, body {
   border-radius: 18px 18px 0 0;
   padding: 14px 14px calc(76px + var(--pad));
   transform: translateY(105%); transition: transform .22s ease;
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
   touch-action: pan-y;
 }
 #sheet.open { transform: translateY(0); }
