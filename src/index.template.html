@@ -42,22 +42,24 @@
   <!-- ------------------------------------------------------------ style -->
   <div class="panel" data-panel="style">
     <h3>Trace style</h3>
-    <div class="chips" id="presets"></div>
-    <p class="note" id="styleHint"></p>
+    <p class="note">Tap the look you want - shown on your actual picture.</p>
+    <div class="styleGallery" id="stylePreviews"></div>
 
-    <div class="row"><label>Opacity</label>
-      <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
-    <div class="row"><label>Detail</label>
-      <input type="range" id="detail" min="0" max="100"><output id="detailOut"></output></div>
-    <div class="row"><label>Threshold</label>
-      <input type="range" id="threshold" min="0" max="100"><output id="thresholdOut"></output></div>
-    <div class="row"><label>Thickness</label>
-      <input type="range" id="thickness" min="0" max="100"><output id="thicknessOut"></output></div>
-
-    <h3 style="margin-top:16px">Line colour</h3>
-    <div class="chips" id="colours"></div>
-    <label class="toggle"><input type="checkbox" id="invert"> Invert lines</label>
-    <label class="toggle"><input type="checkbox" id="knock" checked> Knock out white background</label>
+    <details>
+      <summary class="note">Fine-tune</summary>
+      <div class="row"><label>Opacity</label>
+        <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
+      <div class="row"><label>Detail</label>
+        <input type="range" id="detail" min="0" max="100"><output id="detailOut"></output></div>
+      <div class="row"><label>Threshold</label>
+        <input type="range" id="threshold" min="0" max="100"><output id="thresholdOut"></output></div>
+      <div class="row"><label>Thickness</label>
+        <input type="range" id="thickness" min="0" max="100"><output id="thicknessOut"></output></div>
+      <h3 style="margin-top:16px">Line colour</h3>
+      <div class="chips" id="colours"></div>
+      <label class="toggle"><input type="checkbox" id="invert"> Invert lines</label>
+      <label class="toggle"><input type="checkbox" id="knock" checked> Knock out white background</label>
+    </details>
   </div>
 
   <!-- ------------------------------------------------------------ place -->

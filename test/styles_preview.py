@@ -86,7 +86,7 @@ window.run = async () => {{
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
     for (const p of STYLE_PRESETS) {{
       const t0 = performance.now();
-      const out = applyStyle(data, {{ preset: p.id, detail: 0.5, threshold: 0.5,
+      const out = applyStyle(data, {{ preset: p.id, detail: 0.85, threshold: 0.18,
                                      thickness: 0.15, colour: [16, 16, 20] }});
       const ms = performance.now() - t0;
       let ink = 0, bad = 0;
@@ -103,7 +103,7 @@ window.run = async () => {{
   // White lines on the dark tile, to check the colour option works.
   const data = sources[0][1].getContext('2d').getImageData(0, 0, 512, 512);
   grid.appendChild(tile('white lines on dark',
-    applyStyle(data, {{ preset: 'clean', detail: 0.5, threshold: 0.5, thickness: 0.2,
+    applyStyle(data, {{ preset: 'clean', detail: 0.85, threshold: 0.18, thickness: 0.2,
                        colour: [255, 255, 255] }}), true));
   return stats;
 }};
