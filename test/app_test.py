@@ -363,14 +363,46 @@ def run(headed=False):
         check("returning from freehand restores tag anchoring",
               page.evaluate("() => !state.freehand && !!state.pose"))
 
+        # ---------------------------------------- recrop responsiveness
+        # Regression: with a neural style active, committing a NEW crop used
+        # to await that model's inference with the busy overlay hidden -
+        # "Use this crop" felt dead for the whole run. It must land on the
+        # style screen immediately; the style re-renders when its map lands.
+        page.click("#dockPicture")
+        page.wait_for_timeout(300)
+        page.click('#lib button[data-key="lily"]')
+        page.wait_for_selector("#crop.on", timeout=8000)
+        import time as _time
+        t0 = _time.time()
+        page.click("#btnCropUse")
+        try:
+            page.wait_for_selector("#stylepick h1", state="visible", timeout=3000)
+            fast = (_time.time() - t0) < 3.0
+        except Exception:
+            fast = False
+        check("recrop commits without blocking on inference", fast,
+              f"{(_time.time()-t0)*1000:.0f}ms to style screen")
+        page.wait_for_function("() => !!neuralMaps.artist", timeout=90000)
+        page.wait_for_timeout(400)
+        check("new picture's artist map re-renders", page.evaluate(
+            "() => state.style.preset === 'artist' && outCanvas.width > 1"))
+        page.click("#btnStyleNext")   # camera already running: straight back to AR
+        page.wait_for_timeout(400)
+        check("mid-session Continue skips the print step",
+              not page.is_visible("#printstep h1") and not page.is_visible("#stylepick h1"))
+
         # ------------------------------------------------------- recovery
         # Read the size in the same synchronous turn as the click - a detection
         # frame can (correctly) start re-learning tags before the next timeout.
         after_reset = page.evaluate(
             "() => { document.getElementById('btnReset').click(); return markerMap.size; }")
         check("reset clears the map", after_reset == 0, f"size {after_reset} right after reset")
-        page.wait_for_timeout(2500)
-        check("re-learns after a reset", page.evaluate("() => markerMap.size") >= 3,
+        try:
+            page.wait_for_function("() => markerMap.size >= 3", timeout=8000)
+            relearned = True
+        except Exception:
+            relearned = False
+        check("re-learns after a reset", relearned,
               f"{page.evaluate('() => markerMap.size')} anchored again")
 
         perf = page.evaluate("() => ({ fps: state.fps, ms: state.detectMs, w: state.detW })")

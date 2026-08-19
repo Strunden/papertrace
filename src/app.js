@@ -918,6 +918,10 @@ const outCanvas = document.createElement('canvas');
 
 function drawSourceFrom(bitmap, w, h) {
   hasPicture = true;
+  // New picture: drop the previous picture's styled overlay right away -
+  // its own style re-renders the texture when the map is ready.
+  outCanvas.width = 1; outCanvas.height = 1;
+  overlay.setTexture(outCanvas);
   const k = Math.min(1, MAX_SOURCE / Math.max(w, h));
   srcCanvas.width = Math.max(1, Math.round(w * k));
   srcCanvas.height = Math.max(1, Math.round(h * k));
@@ -929,7 +933,7 @@ function drawSourceFrom(bitmap, w, h) {
   const cs = srcSmall.getContext('2d');
   cs.clearRect(0, 0, srcSmall.width, srcSmall.height);
   cs.drawImage(bitmap, 0, 0, srcSmall.width, srcSmall.height);
-  const kt = Math.min(1, 168 / Math.max(w, h));
+  const kt = Math.min(1, 360 / Math.max(w, h));
   srcThumb.width = Math.max(1, Math.round(w * kt));
   srcThumb.height = Math.max(1, Math.round(h * kt));
   const ct = srcThumb.getContext('2d');
@@ -1173,9 +1177,9 @@ function cancelCrop() {
 // 'ink-rgb' = b&w drawing in an RGB tensor (converted to ink via luma),
 // 'rgb' = painted colour picture. layout/norm follow each model's training.
 const NEURAL_CFG = {
-  artist:   { file: 'lineart.onnx',  snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
-  rough:    { file: 'rough.onnx',    snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
-  ink:      { file: 'inkbrush.onnx', snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb' },
+  artist:   { file: 'lineart.onnx',  snap: 4,  layout: 'nchw', norm: '01',  out: 'ink', enhance: true },
+  rough:    { file: 'rough.onnx',    snap: 4,  layout: 'nchw', norm: '01',  out: 'ink', enhance: true },
+  ink:      { file: 'inkbrush.onnx', snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb', enhance: true },
   paprika:  { file: 'paprika.onnx',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
 };
 let neuralMaps = {};         // preset id -> ink {data,w,h} or rgb {chans,w,h}
@@ -1218,6 +1222,63 @@ const NN_WORKER_SRC = `
 const nnWorkerUrl = URL.createObjectURL(
   new Blob([NN_WORKER_SRC], { type: 'text/javascript' }));
 
+/**
+ * CLAHE - tiled adaptive histogram equalisation with a clip limit, applied
+ * to the LINE models' input only. Bright (or very dark) regions carry
+ * almost no local contrast, so the models drew nothing there - a white
+ * daisy lost its petals, a black dog its fur. Verified on real photos:
+ * recovers that detail with no regression on well-exposed input. The paint
+ * model is exempt - it should keep the photo's real palette.
+ */
+function claheEnhance(imgData, clip, tiles) {
+  const w = imgData.width, h = imgData.height, d = imgData.data;
+  const n = w * h;
+  const luma = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    luma[i] = 0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2];
+  }
+  const tw = Math.ceil(w / tiles), th = Math.ceil(h / tiles);
+  const luts = [];
+  for (let ty = 0; ty < tiles; ty++) {
+    for (let tx = 0; tx < tiles; tx++) {
+      const hist = new Float32Array(256);
+      let cnt = 0;
+      for (let y = ty * th; y < Math.min(h, (ty + 1) * th); y++) {
+        for (let x = tx * tw; x < Math.min(w, (tx + 1) * tw); x++) {
+          hist[Math.min(255, luma[y * w + x] | 0)]++; cnt++;
+        }
+      }
+      const limit = clip * cnt / 256;
+      let excess = 0;
+      for (let i = 0; i < 256; i++) {
+        if (hist[i] > limit) { excess += hist[i] - limit; hist[i] = limit; }
+      }
+      const add = excess / 256;
+      let c = 0;
+      const lut = new Float32Array(256);
+      for (let i = 0; i < 256; i++) { c += hist[i] + add; lut[i] = 255 * c / Math.max(1, cnt); }
+      luts.push(lut);
+    }
+  }
+  const lutAt = (tx, ty) =>
+    luts[Math.min(tiles - 1, Math.max(0, ty)) * tiles + Math.min(tiles - 1, Math.max(0, tx))];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x, v = Math.min(255, luma[i] | 0);
+      const fx = x / tw - 0.5, fy = y / th - 0.5;
+      const x0 = Math.floor(fx), y0 = Math.floor(fy);
+      const ax = fx - x0, ay = fy - y0;
+      const l = (lutAt(x0, y0)[v] * (1 - ax) + lutAt(x0 + 1, y0)[v] * ax) * (1 - ay)
+              + (lutAt(x0, y0 + 1)[v] * (1 - ax) + lutAt(x0 + 1, y0 + 1)[v] * ax) * ay;
+      const sc = l / Math.max(1, luma[i]);
+      d[i * 4] = Math.min(255, d[i * 4] * sc);
+      d[i * 4 + 1] = Math.min(255, d[i * 4 + 1] * sc);
+      d[i * 4 + 2] = Math.min(255, d[i * 4 + 2] * sc);
+    }
+  }
+  return imgData;
+}
+
 /** Downscale srcCanvas and pack it into the model's tensor layout. */
 function nnPrepInput(cfg) {
   // All models are fully convolutional; 512px is the quality/speed sweet
@@ -1229,7 +1290,9 @@ function nnPrepInput(cfg) {
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   ctx.drawImage(srcCanvas, 0, 0, w, h);
-  const d = ctx.getImageData(0, 0, w, h).data;
+  let img = ctx.getImageData(0, 0, w, h);
+  if (cfg.enhance) img = claheEnhance(img, 2.2, 8);
+  const d = img.data;
   const npx = w * h;
   const input = new Float32Array(npx * 3);
   const nv = (v) => cfg.norm === 'pm1' ? v / 127.5 - 1 : v / 255;
@@ -1341,14 +1404,16 @@ function ensureAllNeuralMaps(kinds) {
 
 async function restyle(showBusy, quick) {
   if (!hasPicture) return;
-  if (showBusy) { busy(true); await raf(); }
   const kind = state.style.preset;
   if (NEURAL_CFG[kind] && !neuralMaps[kind]) {
-    if (showBusy) busy(false);
-    await ensureNeuralMap(kind);
-    if (!neuralMaps[kind]) return;   // failed; preset was reverted, retoast'd
-    if (showBusy) busy(true);
+    // Never block the UI on inference - committing a crop with a neural
+    // style active used to freeze "Use this crop" for the whole model run.
+    // Kick the worker and return; its completion hook calls restyle again,
+    // and the gallery tile shows "drawing..." meanwhile.
+    ensureNeuralMap(kind);
+    return;
   }
+  if (showBusy) { busy(true); await raf(); }
   const from = quick && srcSmall.width ? srcSmall : srcCanvas;
   try {
     const data = from.getContext('2d').getImageData(0, 0, from.width, from.height);
@@ -1572,7 +1637,11 @@ function wire() {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   setTimeout(leaveSplash, quickSplash ? 700 : 3400);
   $('start').addEventListener('pointerdown', leaveSplash);
-  $('btnStyleNext').addEventListener('click', () => showScreen('printstep'));
+  $('btnStyleNext').addEventListener('click', () => {
+    // Mid-session (camera already running) the canvas is already printed -
+    // Continue returns straight to tracing.
+    if (state.running) hideScreens(); else showScreen('printstep');
+  });
   $('btnBackToStyle').addEventListener('click', () => { showScreen('stylepick'); buildStylePreviews(); });
   $('btnTrace').addEventListener('click', () => {
     if (!state.running) startCamera(); else hideScreens();
