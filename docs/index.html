@@ -3210,186 +3210,187 @@ function cancelCrop() {
 
 /** While a slider is moving, restyle the half-size copy so the AR loop keeps up. */
 /* ---------------------------------------------------- neural line drawing */
-// The 'artist' preset runs the Informative Drawings model (Chan et al. 2022,
-// MIT) in-browser via onnxruntime-web. Runtime + model are self-hosted next
-// to index.html (~28 MB total) and fetched lazily on first use; Cache
-// Storage keeps them across sessions since GitHub Pages sends short
-// max-age headers. The line map is computed once per source image and
-// cached - the style sliders only remap it, no re-inference.
+// The neural presets run in-browser via onnxruntime-web. Runtime + models
+// are self-hosted next to index.html and fetched lazily on first use; Cache
+// Storage keeps them across sessions since GitHub Pages sends short max-age
+// headers. Each map is computed once per source image - the style sliders
+// only remap it, no re-inference.
+//
+// Every model gets its OWN Worker with its own wasm runtime, so all styles
+// render in parallel: wall time is the slowest single model (~3-4 s)
+// instead of the sum (~15 s). Workers are terminated after inference to
+// give the memory back - a re-crop re-spawns them, which costs a couple of
+// seconds against Cache Storage.
+//
 // One entry per neural preset. out: 'ink' = greyscale line map [1,1,h,w],
 // 'ink-rgb' = b&w drawing in an RGB tensor (converted to ink via luma),
 // 'rgb' = painted colour picture. layout/norm follow each model's training.
 const NEURAL_CFG = {
-  artist:   { file: 'lineart.onnx',  size: '~28 MB', snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
-  rough:    { file: 'rough.onnx',    size: '~16 MB', snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
-  ink:      { file: 'inkbrush.onnx', size: '~4 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb' },
-  paprika:  { file: 'paprika.onnx',  size: '~9 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
+  artist:   { file: 'lineart.onnx',  snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
+  rough:    { file: 'rough.onnx',    snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
+  ink:      { file: 'inkbrush.onnx', snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb' },
+  paprika:  { file: 'paprika.onnx',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
 };
 let neuralMaps = {};         // preset id -> ink {data,w,h} or rgb {chans,w,h}
-let neuralBusy = false;
-const ortSessions = {};      // model file -> InferenceSession
+const neuralPending = {};    // preset id -> Promise while its worker runs
 
-async function cachedFetch(url) {
-  try {
-    const cache = await caches.open('papertrace-models-v1');
-    const hit = await cache.match(url);
-    if (hit) return await hit.arrayBuffer();
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    await cache.put(url, resp.clone());
-    return await resp.arrayBuffer();
-  } catch (e) {
-    // Cache Storage can be unavailable (private mode); plain fetch still works.
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    return await resp.arrayBuffer();
+const NN_WORKER_SRC = `
+  async function cachedFetch(url) {
+    try {
+      const c = await caches.open('papertrace-models-v1');
+      const hit = await c.match(url);
+      if (hit) return hit.arrayBuffer();
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      await c.put(url, r.clone());
+      return r.arrayBuffer();
+    } catch (e) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.arrayBuffer();
+    }
+  }
+  onmessage = async (e) => {
+    const { base, file, input, dims } = e.data;
+    try {
+      importScripts(base + 'ort.min.js');
+      ort.env.wasm.wasmPaths = base;
+      ort.env.wasm.numThreads = 1;
+      const model = await cachedFetch(base + file);
+      const session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
+      const feeds = {};
+      feeds[session.inputNames[0]] = new ort.Tensor('float32', input, dims);
+      const res = await session.run(feeds);
+      const out = res[session.outputNames[0]];
+      postMessage({ ok: true, data: out.data, dims: out.dims }, [out.data.buffer]);
+    } catch (err) {
+      postMessage({ ok: false, error: String(err) });
+    }
+  };
+`;
+const nnWorkerUrl = URL.createObjectURL(
+  new Blob([NN_WORKER_SRC], { type: 'text/javascript' }));
+
+/** Downscale srcCanvas and pack it into the model's tensor layout. */
+function nnPrepInput(cfg) {
+  // All models are fully convolutional; 512px is the quality/speed sweet
+  // spot. snap keeps each conv stack happy.
+  const k = Math.min(1, 512 / Math.max(srcCanvas.width, srcCanvas.height));
+  const w = Math.max(cfg.snap, Math.round(srcCanvas.width * k / cfg.snap) * cfg.snap);
+  const h = Math.max(cfg.snap, Math.round(srcCanvas.height * k / cfg.snap) * cfg.snap);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(srcCanvas, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const npx = w * h;
+  const input = new Float32Array(npx * 3);
+  const nv = (v) => cfg.norm === 'pm1' ? v / 127.5 - 1 : v / 255;
+  if (cfg.layout === 'nhwc') {
+    for (let i = 0; i < npx; i++) {
+      input[i * 3] = nv(d[i * 4]);
+      input[i * 3 + 1] = nv(d[i * 4 + 1]);
+      input[i * 3 + 2] = nv(d[i * 4 + 2]);
+    }
+  } else {
+    for (let i = 0; i < npx; i++) {
+      input[i] = nv(d[i * 4]);
+      input[npx + i] = nv(d[i * 4 + 1]);
+      input[2 * npx + i] = nv(d[i * 4 + 2]);
+    }
+  }
+  return { input, dims: cfg.layout === 'nhwc' ? [1, h, w, 3] : [1, 3, h, w] };
+}
+
+/** Turn a model's output tensor into the per-preset map applyStyle reads. */
+function nnStoreOutput(kind, cfg, out) {
+  if (cfg.out === 'ink') {
+    // [1,1,h,w], 0..1, dark = line
+    const ink = new Float32Array(out.data.length);
+    for (let i = 0; i < ink.length; i++) {
+      ink[i] = 1 - Math.max(0, Math.min(1, out.data[i]));
+    }
+    neuralMaps[kind] = { data: ink, w: out.dims[3], h: out.dims[2] };
+    return;
+  }
+  // NHWC rgb, -1..1
+  const ow = out.dims[2], oh = out.dims[1], on = ow * oh;
+  if (cfg.out === 'ink-rgb') {
+    const ink = new Float32Array(on);
+    for (let i = 0; i < on; i++) {
+      const r = (out.data[i * 3] + 1) * 127.5;
+      const g = (out.data[i * 3 + 1] + 1) * 127.5;
+      const b = (out.data[i * 3 + 2] + 1) * 127.5;
+      const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      ink[i] = 1 - Math.max(0, Math.min(1, luma));
+    }
+    neuralMaps[kind] = { data: ink, w: ow, h: oh };
+  } else {
+    const chans = [new Float32Array(on), new Float32Array(on), new Float32Array(on)];
+    for (let i = 0; i < on; i++) {
+      chans[0][i] = (out.data[i * 3] + 1) * 127.5;
+      chans[1][i] = (out.data[i * 3 + 1] + 1) * 127.5;
+      chans[2][i] = (out.data[i * 3 + 2] + 1) * 127.5;
+    }
+    neuralMaps[kind] = { chans, w: ow, h: oh };
   }
 }
 
-function loadScriptOnce(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const sc = document.createElement('script');
-    sc.src = src;
-    sc.onload = resolve;
-    sc.onerror = () => reject(new Error('failed to load ' + src));
-    document.head.appendChild(sc);
-  });
-}
-
-async function ensureNeuralMap(kind, quiet) {
+function ensureNeuralMap(kind) {
   const cfg = NEURAL_CFG[kind];
-  if (!cfg || neuralBusy || neuralMaps[kind] || !hasPicture) return;
-  neuralBusy = true;
-  if (!quiet) busy(true);
-  try {
-    if (!ortSessions[cfg.file]) {
-      if (!quiet) toast('Downloading the ' + kind + ' model (one-time, ' + cfg.size + ')...', 6000);
-      await loadScriptOnce('ort.min.js');
-      // Absolute path: the proxy worker resolves wasm files from its own
-      // context, where './' would point somewhere else.
-      ort.env.wasm.wasmPaths = new URL('./', location.href).href;
-      ort.env.wasm.numThreads = 1;   // no COOP/COEP headers on static hosting
-      // Run inference in a worker. Without this, session.run() blocks the
-      // main thread for seconds per model - which froze camera tracking
-      // whenever a style was picked or the preview queue was running.
-      ort.env.wasm.proxy = true;
-      const model = await cachedFetch(cfg.file);
-      ortSessions[cfg.file] = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
-      dlog(kind + ' model loaded');
-    }
-    const session = ortSessions[cfg.file];
-    if (!quiet) toast(cfg.out === 'rgb' ? 'Painting your picture...' : 'Drawing your picture...', 4000);
-    // All models are fully convolutional; 512px is the quality/speed sweet
-    // spot (~1-3 s in single-threaded WASM). snap keeps each conv stack happy.
-    const k = Math.min(1, 512 / Math.max(srcCanvas.width, srcCanvas.height));
-    const w = Math.max(cfg.snap, Math.round(srcCanvas.width * k / cfg.snap) * cfg.snap);
-    const h = Math.max(cfg.snap, Math.round(srcCanvas.height * k / cfg.snap) * cfg.snap);
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(srcCanvas, 0, 0, w, h);
-    const d = ctx.getImageData(0, 0, w, h).data;
-    const npx = w * h;
-    const input = new Float32Array(npx * 3);
-    const nv = (v) => cfg.norm === 'pm1' ? v / 127.5 - 1 : v / 255;
-    if (cfg.layout === 'nhwc') {
-      for (let i = 0; i < npx; i++) {
-        input[i * 3] = nv(d[i * 4]);
-        input[i * 3 + 1] = nv(d[i * 4 + 1]);
-        input[i * 3 + 2] = nv(d[i * 4 + 2]);
-      }
-    } else {
-      for (let i = 0; i < npx; i++) {
-        input[i] = nv(d[i * 4]);
-        input[npx + i] = nv(d[i * 4 + 1]);
-        input[2 * npx + i] = nv(d[i * 4 + 2]);
-      }
-    }
-    const dims = cfg.layout === 'nhwc' ? [1, h, w, 3] : [1, 3, h, w];
-    const feeds = {};
-    feeds[session.inputNames[0]] = new ort.Tensor('float32', input, dims);
+  if (!cfg || neuralMaps[kind] || !hasPicture) return Promise.resolve();
+  if (neuralPending[kind]) return neuralPending[kind];
+  const job = (async () => {
+    const { input, dims } = nnPrepInput(cfg);
+    const base = new URL('./', location.href).href;
     const t0 = performance.now();
-    const res = await session.run(feeds);
-    dlog(kind + ' inference ' + Math.round(performance.now() - t0) + 'ms at ' + w + 'x' + h);
-    const out = res[session.outputNames[0]];
-    if (cfg.out === 'ink') {
-      // [1,1,h,w], 0..1, dark = line
-      const ink = new Float32Array(out.data.length);
-      for (let i = 0; i < ink.length; i++) {
-        ink[i] = 1 - Math.max(0, Math.min(1, out.data[i]));
-      }
-      neuralMaps[kind] = { data: ink, w: out.dims[3], h: out.dims[2] };
-    } else {
-      // NHWC rgb, -1..1
-      const ow = out.dims[2], oh = out.dims[1], on = ow * oh;
-      if (cfg.out === 'ink-rgb') {
-        const ink = new Float32Array(on);
-        for (let i = 0; i < on; i++) {
-          const r = (out.data[i * 3] + 1) * 127.5;
-          const g = (out.data[i * 3 + 1] + 1) * 127.5;
-          const b = (out.data[i * 3 + 2] + 1) * 127.5;
-          const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-          ink[i] = 1 - Math.max(0, Math.min(1, luma));
+    await new Promise((resolve) => {
+      const w = new Worker(nnWorkerUrl);
+      w.onmessage = (e) => {
+        if (e.data.ok) {
+          nnStoreOutput(kind, cfg, e.data);
+          dlog(kind + ' rendered in ' + Math.round(performance.now() - t0) + 'ms');
+        } else {
+          dlog(kind + ' model failed: ' + e.data.error);
+          if (state.style.preset === kind) {
+            state.style.preset = 'original';
+            toast('Could not load the ' + kind + ' model - check your connection');
+          }
         }
-        neuralMaps[kind] = { data: ink, w: ow, h: oh };
-      } else {
-        const chans = [new Float32Array(on), new Float32Array(on), new Float32Array(on)];
-        for (let i = 0; i < on; i++) {
-          chans[0][i] = (out.data[i * 3] + 1) * 127.5;
-          chans[1][i] = (out.data[i * 3 + 1] + 1) * 127.5;
-          chans[2][i] = (out.data[i * 3 + 2] + 1) * 127.5;
-        }
-        neuralMaps[kind] = { chans, w: ow, h: oh };
-      }
-    }
-  } catch (e) {
-    dlog(kind + ' model failed: ' + e);
-    if (!quiet) toast('Could not load the ' + kind + ' model - check your connection');
-    if (state.style.preset === kind) state.style.preset = 'original';
-  } finally {
-    neuralBusy = false;
-    if (!quiet) busy(false);
-  }
-}
-
-// Render every neural style's preview in the background, one model at a
-// time, filling gallery tiles in as they finish. Placeholder tiles saying
-// "tap to draw" read as broken - a preview gallery should just show the
-// previews. Models still download only once (Cache Storage) and only when
-// an image is actually loaded with the Style tab open.
-let neuralQueueRunning = false;
-async function ensureAllNeuralMaps(kinds) {
-  if (neuralQueueRunning || !hasPicture) return;
-  neuralQueueRunning = true;
-  try {
-    let announced = false;
-    for (const kind of (kinds || Object.keys(NEURAL_CFG))) {
-      if (neuralMaps[kind]) continue;
-      if (!announced) {
-        toast('Preparing style previews - each model downloads once', 3500);
-        announced = true;
-        buildStylePreviews();          // relabel placeholders to "drawing..."
-      }
-      await ensureNeuralMap(kind, true);
-      if (!neuralMaps[kind]) break;    // offline or failed - stop the queue
-      buildStylePreviews();
-      if (state.style.preset === kind) restyle(false, false);
-      if (kind === 'artist' && state.autoStyle && state.style.preset === 'original') {
-        state.autoStyle = false;
-        state.style.preset = 'artist';
-        restyle(false, false);
-        buildStylePreviews();
-        toast('Artist sketch applied - tap another style to change');
-      }
-    }
-  } finally {
-    neuralQueueRunning = false;
+        w.terminate();
+        resolve();
+      };
+      w.onerror = (err) => {
+        dlog(kind + ' worker error: ' + (err && err.message));
+        w.terminate();
+        resolve();
+      };
+      w.postMessage({ base, file: cfg.file, input, dims }, [input.buffer]);
+    });
+    delete neuralPending[kind];
+    if (!neuralMaps[kind]) return;                 // failed - a retry can re-run
     buildStylePreviews();
-  }
+    if (state.style.preset === kind) restyle(false, false);
+    if (kind === 'artist' && state.autoStyle && state.style.preset === 'original') {
+      state.autoStyle = false;
+      state.style.preset = 'artist';
+      restyle(false, false);
+      buildStylePreviews();
+    }
+  })();
+  neuralPending[kind] = job;
+  return job;
 }
 
-
+// Kick off every missing style at once - each in its own worker.
+function ensureAllNeuralMaps(kinds) {
+  if (!hasPicture) return Promise.resolve();
+  const missing = (kinds || Object.keys(NEURAL_CFG))
+    .filter((k) => NEURAL_CFG[k] && !neuralMaps[k]);
+  if (!missing.length) return Promise.resolve();
+  buildStylePreviews();                            // placeholders -> drawing...
+  return Promise.all(missing.map((k) => ensureNeuralMap(k)));
+}
 
 async function restyle(showBusy, quick) {
   if (!hasPicture) return;
@@ -3400,7 +3401,6 @@ async function restyle(showBusy, quick) {
     await ensureNeuralMap(kind);
     if (!neuralMaps[kind]) return;   // failed; preset was reverted, retoast'd
     if (showBusy) busy(true);
-    buildStylePreviews();
   }
   const from = quick && srcSmall.width ? srcSmall : srcCanvas;
   try {
@@ -3486,7 +3486,7 @@ function buildStylePreviews() {
       tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
       tctx.fillText(NEURAL_CFG[p.id].out === 'rgb' ? '\uD83C\uDFA8' : '\u270E', tile.width / 2, tile.height * 0.42);
       tctx.font = `600 ${Math.max(9, Math.round(tile.height * 0.09))}px sans-serif`;
-      tctx.fillText(neuralQueueRunning ? 'drawing...' : 'tap to draw', tile.width / 2, tile.height * 0.72);
+      tctx.fillText(neuralPending[p.id] ? 'drawing...' : 'tap to draw', tile.width / 2, tile.height * 0.72);
     } else {
       const out = applyStyle(data, { ...state.style, preset: p.id, neuralMaps });
       const tmp = document.createElement('canvas');
