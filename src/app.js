@@ -381,6 +381,18 @@ function rotateAboutCenter(H, deltaRad) {
   return matMul(R, H);
 }
 
+function stopCamera() {
+  if (!state.running) return;
+  state.running = false;               // loop() sees this and stops itself
+  state.freeze = false;
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null; track = null;
+  state.pose = null;
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  if (openTab) selectTab(openTab);     // close the sheet
+  dlog('camera stopped by user');
+}
+
 let wakeLock = null;
 async function requestWakeLock() {
   try {
@@ -1647,6 +1659,24 @@ function wire() {
     if (!state.running) startCamera(); else hideScreens();
   });
   $('btnBackToPick').addEventListener('click', () => showScreen('pick'));
+  $('btnExit').addEventListener('click', () => {
+    stopCamera();
+    showScreen('pick');                // back to the journey root
+  });
+  $('btnShare').addEventListener('click', async () => {
+    const data = {
+      title: 'PaperTrace',
+      text: 'Trace any photo onto real paper, through your phone camera.',
+      url: 'https://strunden.github.io/papertrace/',
+    };
+    try {
+      if (navigator.share) await navigator.share(data);
+      else {
+        await navigator.clipboard.writeText(data.url);
+        toast('Link copied');
+      }
+    } catch (e) { /* user cancelled the share sheet */ }
+  });
   $('dockPicture').addEventListener('click', () => showScreen('pick'));
   $('dockStyle').addEventListener('click', () => { showScreen('stylepick'); buildStylePreviews(); });
   $('btnHelp').addEventListener('click', () => showScreen('help'));

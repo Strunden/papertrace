@@ -405,6 +405,14 @@ def run(headed=False):
         check("re-learns after a reset", relearned,
               f"{page.evaluate('() => markerMap.size')} anchored again")
 
+        # ------------------------------------------------- exit trace mode
+        # Last, because stopping the fake stream ends it for good.
+        page.click("#btnExit")
+        page.wait_for_timeout(400)
+        check("exit stops the camera", not page.evaluate("() => state.running"))
+        check("exit lands on the library", page.is_visible("#pick h1"))
+        check("share is offered outside tracing", page.is_visible("#btnShare"))
+
         perf = page.evaluate("() => ({ fps: state.fps, ms: state.detectMs, w: state.detW })")
         notes.append(f"detector {perf['w']}px, {perf['ms']:.1f}ms/frame, {perf['fps']:.0f} fps "
                      f"(software GL in CI - real phones are far faster)")

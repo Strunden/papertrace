@@ -18,6 +18,7 @@
 <div id="touch"></div>
 
 <div id="topbar">
+  <button class="iconbtn" id="btnExit" title="Stop tracing">&larr;</button>
   <div class="pill"><span id="statusDot" class="dot"></span><span id="status">Starting</span></div>
   <div class="spacer"></div>
   <button class="iconbtn" id="btnFreeze" title="Freeze the frame">❙❙</button>
@@ -104,7 +105,9 @@
     <div class="lib" id="lib"></div>
     <input type="file" id="file" accept="image/*" hidden>
     <p class="startFoot"><button class="linklike onlyTracing" data-close>back to tracing</button>
-      <button class="linklike notTracing" id="btnHelp">how it works</button><br>
+      <button class="linklike notTracing" id="btnHelp">how it works</button>
+      <span class="notTracing">&nbsp;·&nbsp;</span>
+      <button class="linklike" id="btnShare">share PaperTrace</button><br>
       <span class="privacyline notTracing">Nothing leaves your device.</span></p>
   </div>
 </div>
@@ -139,29 +142,27 @@
   <div class="inner">
     <h1>How it works</h1>
     <p class="lead">Your phone has no depth sensor it can use from a web page, so the app works
-      out where the paper is by watching printed square tags in the camera image.</p>
+      out where the paper is by watching the printed marks on the canvas.</p>
 
-    <h2>Why tags</h2>
-    <p>Each tag is a square of known shape. Seeing one gives the browser enough geometry to work
-      out how the paper is tilted and how far away it is, which is what lets the overlay sit
-      <i>on</i> the page in correct perspective rather than floating on the screen.</p>
-    <p>You do not have to arrange them in any pattern. Scatter them, mix sizes, put them at odd
-      angles. On the first sweep the app measures where each tag sits relative to the others and
-      builds a little map of your desk, so afterwards any single tag in view is enough.</p>
+    <h2>Why the canvas has those marks</h2>
+    <p>Each printed mark is a square of known shape and position. Seeing a few of them gives the
+      browser enough geometry to work out how the page is tilted and how far away it is - that is
+      what lets your picture sit <i>on</i> the paper in correct perspective rather than floating
+      on the screen. The canvas layout is known to the app, so the moment a few marks are in
+      view the whole page locks instantly; after that, any single mark in view keeps it locked.</p>
 
     <h2>Getting steady results</h2>
     <ul>
-      <li><b>Keep two tags in view when you can.</b> Two tags pin the perspective properly. One tag
-        leaves it to be inferred from four corners, and small measurement errors get amplified the
-        further you look from that tag, so the image drifts by a few millimetres.</li>
-      <li><b>Spread the tags around the drawing</b>, not clustered in one corner, so your hand never
-        covers all of them at once.</li>
-      <li><b>Even, diffuse light.</b> Glare on a tag hides it; hard shadow across one does too.</li>
-      <li><b>Matte paper.</b> Glossy label stock reflects and blinds the tracker.</li>
-      <li><b>Bigger tags reach further.</b> 20 mm for a sketchbook, 30 mm for A4 on a desk, 45 mm
-        for an easel.</li>
-      <li>A phone stand or clamp helps enormously - not because the tracking needs it, but because
-        your hands are then free to draw.</li>
+      <li><b>Keep two or more marks in view when you can.</b> One mark holds the lock, but small
+        measurement errors grow with distance from it, so the picture can drift by a millimetre
+        or two.</li>
+      <li><b>Don't cover the marks</b> with your drawing hand - work from the side, or turn the
+        page.</li>
+      <li><b>Even, diffuse light.</b> Glare hides a mark; a hard shadow across one does too.</li>
+      <li><b>Print at 100% scale</b> on plain matte paper - glossy stock reflects and blinds the
+        tracker.</li>
+      <li>A phone stand or clamp helps enormously - not because the tracking needs it, but
+        because your hands are then free to draw.</li>
     </ul>
 
     <h2>Trace styles</h2>
@@ -170,31 +171,19 @@
       <b>Rough sketch</b> a loose underdrawing, <b>Ink brush</b> bold brush strokes.
       <b>Paprika</b> renders a painted version - a colour guide for painting what you
       traced. <b>Ghost</b> keeps the original photo, faded, for shading
-      reference. <b>Original</b> shows it untouched - right for artwork that is already line
-      art, like the built-in flowers.</p>
-    <p>Threshold trims faint pencil marks, and Thickness fattens the lines for bright
-      conditions.</p>
+      reference. <b>Original</b> shows it untouched - right for pictures that are already line
+      art.</p>
 
-    <h2>Getting it onto your phone</h2>
-    <p>Browsers only grant camera access to pages served over <code>https://</code> (or
-      <code>localhost</code>). A file opened from your Files app does not qualify on iPhone, so
-      this page needs to be served. Any of these takes about a minute:</p>
-    <ul>
-      <li>Drag the HTML file onto <b>app.netlify.com/drop</b> - it hands you an https link
-        instantly, no account needed. Open that link on your phone.</li>
-      <li>Put it in a GitHub repository and turn on GitHub Pages.</li>
-      <li>Serve the folder from your computer and expose it with a tunnel such as
-        <code>cloudflared tunnel --url http://localhost:8000</code>.</li>
-    </ul>
-    <p>On a desktop or laptop, opening the file directly usually does work in Chrome, which is
-      handy for trying the styles out before you print anything.</p>
-    <p><b>Add it to your home screen</b> once it's on an https link (Safari's Share sheet →
-      Add to Home Screen). Opening it that way instead of as a browser tab drops Safari's own
-      chrome and tab-switching overhead, which noticeably smooths out the camera tracking.</p>
+    <h2>On your phone</h2>
+    <p>The app lives at <b>strunden.github.io/papertrace</b> - open that link in Safari or
+      Chrome. <b>Add it to your home screen</b> (Safari's Share sheet &rarr; Add to Home
+      Screen): opening it that way drops the browser's own chrome and tab overhead, which
+      noticeably smooths out the camera tracking.</p>
 
     <h2>Privacy</h2>
-    <p>Everything runs locally in the browser. No frames, images or measurements are sent
-      anywhere, and the app makes no network requests at all once it has loaded.</p>
+    <p>Everything runs locally in the browser - camera frames, your photos and the drawings
+      made from them never leave the device. The only things ever downloaded are the app
+      itself and the style models, each fetched once and cached for offline use.</p>
 
     <div class="hero"><button class="btn primary" data-close>Back</button></div>
   </div>
