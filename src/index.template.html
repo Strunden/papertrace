@@ -49,8 +49,6 @@
       <summary class="note">Fine-tune</summary>
       <div class="row"><label>Opacity</label>
         <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
-      <div class="row"><label>Detail</label>
-        <input type="range" id="detail" min="0" max="100"><output id="detailOut"></output></div>
       <div class="row"><label>Threshold</label>
         <input type="range" id="threshold" min="0" max="100"><output id="thresholdOut"></output></div>
       <div class="row"><label>Thickness</label>
@@ -186,12 +184,12 @@
     </ul>
 
     <h2>Trace styles</h2>
-    <p>Photographs are hard to trace directly, so the app converts whatever you load into
-      line work. <b>Clean lines</b> is the everyday choice. <b>Contour map</b> turns tones into
-      nested bands, which is the one to use if you are going to paint. <b>Stencil</b> gives solid
-      shapes for lettering. <b>Ghost</b> keeps the original photo, faded, for shading reference.</p>
-    <p>Detail controls how much fine texture survives, Threshold how much of the image counts as an
-      edge, and Thickness fattens the lines for bright conditions.</p>
+    <p><b>Artist sketch</b> has a neural model draw your photo as a line drawing, entirely on
+      your device (a ~28 MB one-time download, then it works offline). <b>Ghost</b> keeps the
+      original photo, faded, for shading reference. <b>Original</b> shows it untouched - right
+      for artwork that is already line art, like the built-in flowers.</p>
+    <p>Threshold trims faint pencil marks, and Thickness fattens the lines for bright
+      conditions.</p>
 
     <h2>Getting it onto your phone</h2>
     <p>Browsers only grant camera access to pages served over <code>https://</code> (or

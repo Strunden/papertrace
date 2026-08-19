@@ -27,13 +27,9 @@ const state = {
   showGrid: false,
   gridN: 3,
   opacity: 0.85,
-  // detail/threshold defaults were 0.5/0.5 - fine on sharp, high-contrast
-  // line art, but tested against real soft-focus/photographic content
-  // (a blurred flower photo specifically) they missed most of the subject
-  // entirely. 0.85/0.18 traces the soft content properly and, verified
-  // against sharp content (mountain silhouette, a hard-edged portrait), is
-  // no worse there - so this is a strictly better default, not a tradeoff.
-  style: { preset: 'clean', detail: 0.85, threshold: 0.18, thickness: 0.15,
+  // 'original' works instantly for everything (the built-in flowers ARE
+  // line art); the Artist sketch tile is one tap away for photos.
+  style: { preset: 'original', threshold: 0.18, thickness: 0.15,
            invert: false, knockWhite: true, colour: [16, 16, 20] },
   place: { x: 0, y: 0, scale: 3, scaleY: null, angle: 0, flip: false },
   presetFrame: null,
@@ -1236,7 +1232,7 @@ async function ensureArtistMap() {
   } catch (e) {
     dlog('artist model failed: ' + e);
     toast('Could not load the drawing model - check your connection');
-    if (state.style.preset === 'artist') state.style.preset = 'clean';
+    if (state.style.preset === 'artist') state.style.preset = 'original';
   } finally {
     artistBusy = false;
     busy(false);
@@ -1576,9 +1572,6 @@ function wire() {
   });
 
   bindSlider('opacity', () => state.opacity, (v) => { state.opacity = v; });
-  bindSlider('detail', () => state.style.detail,
-             (v) => { state.style.detail = v; restyleSoon(true); },
-             () => { restyle(false, false); buildStylePreviews(); });
   bindSlider('threshold', () => state.style.threshold,
              (v) => { state.style.threshold = v; restyleSoon(true); },
              () => { restyle(false, false); buildStylePreviews(); });
