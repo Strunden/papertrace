@@ -505,9 +505,14 @@ function applyDetections(dets, ms, detW, stats) {
     if (res.tracking) {
       state.pose = res.H;
       state.gyroRollDelta = 0;   // fresh vision pose - any drift since is stale, drop it
-    } else if (gyroReady && res.holding) {
-      state.pose = rotateAboutCenter(res.H, state.gyroRollDelta);
     } else {
+      // ponytail: gyro-coasting (rotateAboutCenter) is built but disabled -
+      // its sign/scale depends on rear-camera sensor mounting convention,
+      // which varies by phone and can't be derived reliably from the spec
+      // alone. Applying it wrong actively spins the pose during every hold,
+      // which reads as worse than the plain freeze below. Re-enable once
+      // verified against a real device's debug log (compare predicted vs.
+      // actual on-screen rotation direction during a deliberate twist).
       state.pose = res.H;
     }
     state.poseDetW = detW;
@@ -913,7 +918,7 @@ function drawSourceFrom(bitmap, w, h) {
   const cs = srcSmall.getContext('2d');
   cs.clearRect(0, 0, srcSmall.width, srcSmall.height);
   cs.drawImage(bitmap, 0, 0, srcSmall.width, srcSmall.height);
-  const kt = Math.min(1, 96 / Math.max(w, h));
+  const kt = Math.min(1, 168 / Math.max(w, h));
   srcThumb.width = Math.max(1, Math.round(w * kt));
   srcThumb.height = Math.max(1, Math.round(h * kt));
   const ct = srcThumb.getContext('2d');
@@ -1379,6 +1384,21 @@ function wire() {
     const on = !e.currentTarget.classList.contains('on');
     try {
       await track.applyConstraints({ advanced: [{ torch: on }] });
+      // iOS Safari has a known bug: applyConstraints({torch:false}) resolves
+      // but leaves the LED lit. Restarting the track (fresh camera session)
+      // is the documented workaround - it actually releases the flash.
+      if (!on) {
+        const deviceId = track.getSettings ? track.getSettings().deviceId : null;
+        track.stop();
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: deviceId ? { deviceId: { exact: deviceId } }
+                           : { facingMode: { ideal: 'environment' } },
+        });
+        el.video.srcObject = stream;
+        await el.video.play().catch(() => {});
+        track = stream.getVideoTracks()[0];
+      }
       e.currentTarget.classList.toggle('on', on);
     } catch (err) { toast('Torch not available'); }
   });

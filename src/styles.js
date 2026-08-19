@@ -11,6 +11,7 @@ const STYLE_PRESETS = [
   { id: 'sketch',   name: 'Sketch',      hint: 'Softer pencil-like lines that keep shading detail.' },
   { id: 'bold',     name: 'Bold outline', hint: 'Only the strongest edges, thickened. Good in bright light.' },
   { id: 'contour',  name: 'Contour map', hint: 'Tone boundaries, like a colouring book. Good for painting.' },
+  { id: 'paint',    name: 'Paint by numbers', hint: 'Flat colour regions with an outline - trace the lines, then match paint or marker colour to each one.' },
   { id: 'stencil',  name: 'Stencil',     hint: 'Solid black shapes. Good for lettering and silhouettes.' },
   { id: 'ghost',    name: 'Ghost',       hint: 'The photo itself, faded. Best for shading reference.' },
   { id: 'original', name: 'Original',    hint: 'Untouched, for artwork that is already line art.' },
@@ -159,29 +160,30 @@ function dogInk(gray, w, h, sigma, k, soft) {
   return out;
 }
 
-/** Otsu threshold over a 0..1 float image. */
-function otsu01(v, n) {
-  const hist = new Int32Array(256);
-  for (let i = 0; i < n; i++) hist[Math.max(0, Math.min(255, (v[i] * 255) | 0))]++;
-  let sumAll = 0;
-  for (let t = 0; t < 256; t++) sumAll += t * hist[t];
-  let sumB = 0, wB = 0, best = -1, thr = 128;
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t];
-    if (!wB) continue;
-    const wF = n - wB;
-    if (!wF) break;
-    sumB += t * hist[t];
-    const mB = sumB / wB, mF = (sumAll - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > best) { best = between; thr = t; }
-  }
-  return thr / 255;
-}
-
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a || 1e-6)));
   return t * t * (3 - 2 * t);
+}
+
+/**
+ * Grey value below which a given fraction of the image's pixels fall.
+ * Otsu assumes the image is roughly bimodal (a clear light group and a clear
+ * dark group); a light subject on a light background has no such split, and
+ * Otsu's variance-maximising cut can land almost anywhere, sometimes leaving
+ * stencil with almost nothing inked. Picking the cut directly from the
+ * desired ink fraction always inks *something*, and ties the threshold
+ * slider straight to "how much of the picture becomes ink".
+ */
+function percentileThreshold(v, n, frac) {
+  const hist = new Int32Array(256);
+  for (let i = 0; i < n; i++) hist[Math.max(0, Math.min(255, (v[i] * 255) | 0))]++;
+  const target = frac * n;
+  let acc = 0;
+  for (let t = 0; t < 256; t++) {
+    acc += hist[t];
+    if (acc >= target) return t / 255;
+  }
+  return 1;
 }
 
 /* --------------------------------------------------------------- driver */
@@ -222,8 +224,11 @@ function applyStyle(imageData, o) {
 
   switch (o.preset) {
     case 'sketch': {
-      const sigma = (0.8 + (1 - detail) * 3.0) * Math.max(0.7, scale);
-      const ink = dogInk(denoised, w, h, sigma, 0.7 + threshold * 3.2, 1.6);
+      // Finer scale and a lower confidence bar than 'clean' - catches the
+      // soft internal shading edges clean's coarser pass throws away, at
+      // the cost of a noisier, more hand-drawn line.
+      const sigma = (0.45 + (1 - detail) * 1.5) * Math.max(0.6, scale);
+      const ink = dogInk(denoised, w, h, sigma, 0.45 + threshold * 2.0, 2.2);
       for (let i = 0; i < n; i++) alpha[i] = ink[i];
       break;
     }
@@ -278,12 +283,52 @@ function applyStyle(imageData, o) {
       }
       break;
     }
+    case 'paint': {
+      // Posterize in full colour (not just tone) and outline the region
+      // boundaries - the only preset carrying colour through to the page,
+      // so tracing gives you both the lines and which colour goes where.
+      const sigma = (1.2 + (1 - detail) * 4.0) * Math.max(0.7, scale);
+      const rCh = new Float32Array(n), gCh = new Float32Array(n), bCh = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const a = src[i * 4 + 3] / 255;
+        rCh[i] = src[i * 4] * a + 255 * (1 - a);
+        gCh[i] = src[i * 4 + 1] * a + 255 * (1 - a);
+        bCh[i] = src[i * 4 + 2] * a + 255 * (1 - a);
+      }
+      const rB = gaussBlur(rCh, w, h, sigma);
+      const gB = gaussBlur(gCh, w, h, sigma);
+      const bB = gaussBlur(bCh, w, h, sigma);
+      const levels = Math.max(2, Math.round(3 + threshold * 5));
+      const step = 256 / levels;
+      const qi = new Int32Array(n);
+      rgb = new Uint8ClampedArray(n * 3);
+      for (let i = 0; i < n; i++) {
+        const qr = Math.min(levels - 1, Math.floor(rB[i] / step));
+        const qg = Math.min(levels - 1, Math.floor(gB[i] / step));
+        const qb = Math.min(levels - 1, Math.floor(bB[i] / step));
+        qi[i] = (qr * levels + qg) * levels + qb;
+        rgb[i * 3] = Math.round((qr + 0.5) * step);
+        rgb[i * 3 + 1] = Math.round((qg + 0.5) * step);
+        rgb[i * 3 + 2] = Math.round((qb + 0.5) * step);
+      }
+      const outlineCol = o.colour || [16, 16, 20];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          const edge = (x + 1 < w && qi[i + 1] !== qi[i]) || (y + 1 < h && qi[i + w] !== qi[i]);
+          if (edge) { rgb[i * 3] = outlineCol[0]; rgb[i * 3 + 1] = outlineCol[1]; rgb[i * 3 + 2] = outlineCol[2]; }
+          alpha[i] = 1;
+        }
+      }
+      break;
+    }
     case 'stencil': {
       const g = gaussBlur(denoised, w, h, 0.5 + (1 - detail) * 2.5);
-      // Otsu picks the light/dark split for this particular image; the slider
-      // then nudges it. A local adaptive threshold looks great on scanned text
-      // and turns photographs into confetti.
-      const t = otsu01(g, n) + (threshold - 0.5) * 0.5;
+      // The slider directly sets how much of the picture becomes ink
+      // (see percentileThreshold) rather than relying on Otsu, which can
+      // pick a near-useless split on a light subject over a light background.
+      const frac = 0.12 + threshold * 0.45;
+      const t = percentileThreshold(g, n, frac);
       for (let i = 0; i < n; i++) alpha[i] = smoothstep(t + 0.02, t - 0.02, g[i]);
       break;
     }
