@@ -13,8 +13,11 @@
  * ------------------------------------------------------------------------- */
 
 const STYLE_PRESETS = [
-  { id: 'artist',   name: 'Artist sketch', hint: 'A neural model trained on artist line drawings draws your picture. Downloads ~28 MB once, then works offline.' },
-  { id: 'painting', name: 'Painting',    hint: 'A watercolour-style painting of your photo (AnimeGANv2, Hayao style) - a colour guide for painting what you traced. Downloads ~8 MB once.' },
+  { id: 'artist',   name: 'Artist sketch', hint: 'Clean, delicate line drawing by a neural model trained on artist drawings. Downloads ~28 MB once, then works offline.' },
+  { id: 'rough',    name: 'Rough sketch', hint: 'Loose construction-line sketch, like an underdrawing. Downloads ~16 MB once.' },
+  { id: 'ink',      name: 'Ink brush',   hint: 'Bold brush-and-ink strokes. Great for markers and strong outlines. Downloads ~4 MB once.' },
+  { id: 'painting', name: 'Watercolour', hint: 'Soft watercolour-style painting (Hayao style) - a colour guide for painting what you traced. Downloads ~8 MB once.' },
+  { id: 'vivid',    name: 'Vivid paint', hint: 'Crisp, vivid painted look (Shinkai style) - a brighter colour guide. Downloads ~8 MB once.' },
   { id: 'ghost',    name: 'Ghost',       hint: 'The photo itself, faded. Best for shading reference.' },
   { id: 'original', name: 'Original',    hint: 'Untouched, for artwork that is already line art.' },
 ];
@@ -85,7 +88,7 @@ function smoothstep(a, b, x) {
 /**
  * @param {ImageData} imageData source pixels (already scaled down)
  * @param {object} o {preset, threshold, thickness, invert, colour, knockWhite,
- *                    artistMap, paintMap} - threshold/thickness are 0..1
+ *                    neuralMaps} - threshold/thickness are 0..1
  * @returns {ImageData} straight-alpha RGBA
  */
 function applyStyle(imageData, o) {
@@ -112,34 +115,37 @@ function applyStyle(imageData, o) {
   let rgb = null;                        // set only by ghost / original
 
   switch (o.preset) {
-    case 'artist': {
-      // o.artistMap is the neural line drawing (ink strength 0..1) computed
+    case 'artist':
+    case 'rough':
+    case 'ink': {
+      // The neural line drawing (ink strength 0..1) is computed
       // asynchronously in app.js - this case only maps it onto the paper.
       // Without a map yet, output stays transparent; the app shows progress.
-      if (o.artistMap) {
-        const ink = resampleMap(o.artistMap, w, h);
+      const map = o.neuralMaps && o.neuralMaps[o.preset];
+      if (map) {
+        const ink = resampleMap(map, w, h);
         // Keep the model's soft pencil greys; threshold trims faint marks.
         const lo = 0.06 + threshold * 0.3;
         for (let i = 0; i < n; i++) alpha[i] = smoothstep(lo, lo + 0.3, ink[i]);
       }
       break;
     }
-    case 'painting': {
-      // o.paintMap is the painted rendering from app.js; this case shows it
-      // like ghost/original show the photo - a colour reference, not lines.
-      if (o.paintMap) {
-        const r = resampleMap({ data: o.paintMap.chans[0], w: o.paintMap.w, h: o.paintMap.h }, w, h);
-        const g = resampleMap({ data: o.paintMap.chans[1], w: o.paintMap.w, h: o.paintMap.h }, w, h);
-        const b = resampleMap({ data: o.paintMap.chans[2], w: o.paintMap.w, h: o.paintMap.h }, w, h);
-        rgb = new Uint8ClampedArray(n * 3);
+    case 'painting':
+    case 'vivid': {
+      // The painted rendering from app.js, shown the way ghost/original show
+      // the photo - a colour reference, not lines.
+      const map = o.neuralMaps && o.neuralMaps[o.preset];
+      rgb = new Uint8ClampedArray(n * 3);     // stays transparent without a map
+      if (map) {
+        const r = resampleMap({ data: map.chans[0], w: map.w, h: map.h }, w, h);
+        const g = resampleMap({ data: map.chans[1], w: map.w, h: map.h }, w, h);
+        const b = resampleMap({ data: map.chans[2], w: map.w, h: map.h }, w, h);
         for (let i = 0; i < n; i++) {
           rgb[i * 3] = r[i]; rgb[i * 3 + 1] = g[i]; rgb[i * 3 + 2] = b[i];
           const luma = (0.2126 * r[i] + 0.7152 * g[i] + 0.0722 * b[i]) / 255;
           alpha[i] = o.knockWhite === false ? 1
             : Math.min(1, Math.max(0, (1 - luma) * 1.25 + (threshold - 0.5) * 0.6));
         }
-      } else {
-        rgb = new Uint8ClampedArray(n * 3);   // transparent placeholder
       }
       break;
     }

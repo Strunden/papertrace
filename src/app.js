@@ -921,8 +921,7 @@ function drawSourceFrom(bitmap, w, h) {
   ct.clearRect(0, 0, srcThumb.width, srcThumb.height);
   ct.drawImage(bitmap, 0, 0, srcThumb.width, srcThumb.height);
   state.aspect = srcCanvas.width / srcCanvas.height;
-  artistMap = null;              // new picture -> stale neural maps
-  paintMap = null;
+  neuralMaps = {};               // new picture -> stale neural maps
 }
 
 function loadImageEl(src) {
@@ -1157,8 +1156,17 @@ let restyleTimer = null;
 // Storage keeps them across sessions since GitHub Pages sends short
 // max-age headers. The line map is computed once per source image and
 // cached - the style sliders only remap it, no re-inference.
-let artistMap = null;        // {data: Float32Array ink 0..1, w, h}
-let paintMap = null;         // {chans: [F32,F32,F32] rgb 0..255, w, h}
+// One entry per neural preset. out: 'ink' = greyscale line map [1,1,h,w],
+// 'ink-rgb' = b&w drawing in an RGB tensor (converted to ink via luma),
+// 'rgb' = painted colour picture. layout/norm follow each model's training.
+const NEURAL_CFG = {
+  artist:   { file: 'lineart.onnx',  size: '~28 MB', snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
+  rough:    { file: 'rough.onnx',    size: '~16 MB', snap: 4,  layout: 'nchw', norm: '01',  out: 'ink' },
+  ink:      { file: 'inkbrush.onnx', size: '~4 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'ink-rgb' },
+  painting: { file: 'painting.onnx', size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
+  vivid:    { file: 'vivid.onnx',    size: '~8 MB',  snap: 32, layout: 'nhwc', norm: 'pm1', out: 'rgb' },
+};
+let neuralMaps = {};         // preset id -> ink {data,w,h} or rgb {chans,w,h}
 let neuralBusy = false;
 const ortSessions = {};      // model file -> InferenceSession
 
@@ -1191,14 +1199,8 @@ function loadScriptOnce(src) {
 }
 
 async function ensureNeuralMap(kind) {
-  if (neuralBusy || !srcCanvas.width) return;
-  if (kind === 'artist' ? artistMap : paintMap) return;
-  // artist: Informative Drawings - NCHW, 0..1 in, greyscale line map out.
-  // painting: AnimeGANv2 Hayao - NHWC, -1..1 in/out, painted RGB out; its
-  // conv stack needs dims snapped to multiples of 32.
-  const cfg = kind === 'artist'
-    ? { file: 'lineart.onnx', size: '~28 MB', snap: 4 }
-    : { file: 'painting.onnx', size: '~8 MB', snap: 32 };
+  const cfg = NEURAL_CFG[kind];
+  if (!cfg || neuralBusy || neuralMaps[kind] || !srcCanvas.width) return;
   neuralBusy = true;
   busy(true);
   try {
@@ -1212,9 +1214,9 @@ async function ensureNeuralMap(kind) {
       dlog(kind + ' model loaded');
     }
     const session = ortSessions[cfg.file];
-    toast(kind === 'artist' ? 'Drawing your picture...' : 'Painting your picture...', 4000);
-    // Both models are fully convolutional; 512px is the quality/speed sweet
-    // spot (~2-3 s in single-threaded WASM).
+    toast(cfg.out === 'rgb' ? 'Painting your picture...' : 'Drawing your picture...', 4000);
+    // All models are fully convolutional; 512px is the quality/speed sweet
+    // spot (~1-3 s in single-threaded WASM). snap keeps each conv stack happy.
     const k = Math.min(1, 512 / Math.max(srcCanvas.width, srcCanvas.height));
     const w = Math.max(cfg.snap, Math.round(srcCanvas.width * k / cfg.snap) * cfg.snap);
     const h = Math.max(cfg.snap, Math.round(srcCanvas.height * k / cfg.snap) * cfg.snap);
@@ -1225,45 +1227,56 @@ async function ensureNeuralMap(kind) {
     const d = ctx.getImageData(0, 0, w, h).data;
     const npx = w * h;
     const input = new Float32Array(npx * 3);
-    let tensor;
-    if (kind === 'artist') {
+    const nv = (v) => cfg.norm === 'pm1' ? v / 127.5 - 1 : v / 255;
+    if (cfg.layout === 'nhwc') {
       for (let i = 0; i < npx; i++) {
-        input[i] = d[i * 4] / 255;
-        input[npx + i] = d[i * 4 + 1] / 255;
-        input[2 * npx + i] = d[i * 4 + 2] / 255;
+        input[i * 3] = nv(d[i * 4]);
+        input[i * 3 + 1] = nv(d[i * 4 + 1]);
+        input[i * 3 + 2] = nv(d[i * 4 + 2]);
       }
-      tensor = new ort.Tensor('float32', input, [1, 3, h, w]);
     } else {
       for (let i = 0; i < npx; i++) {
-        input[i * 3] = d[i * 4] / 127.5 - 1;
-        input[i * 3 + 1] = d[i * 4 + 1] / 127.5 - 1;
-        input[i * 3 + 2] = d[i * 4 + 2] / 127.5 - 1;
+        input[i] = nv(d[i * 4]);
+        input[npx + i] = nv(d[i * 4 + 1]);
+        input[2 * npx + i] = nv(d[i * 4 + 2]);
       }
-      tensor = new ort.Tensor('float32', input, [1, h, w, 3]);
     }
-    const t0 = performance.now();
+    const dims = cfg.layout === 'nhwc' ? [1, h, w, 3] : [1, 3, h, w];
     const feeds = {};
-    feeds[session.inputNames[0]] = tensor;
+    feeds[session.inputNames[0]] = new ort.Tensor('float32', input, dims);
+    const t0 = performance.now();
     const res = await session.run(feeds);
     dlog(kind + ' inference ' + Math.round(performance.now() - t0) + 'ms at ' + w + 'x' + h);
     const out = res[session.outputNames[0]];
-    if (kind === 'artist') {
+    if (cfg.out === 'ink') {
       // [1,1,h,w], 0..1, dark = line
       const ink = new Float32Array(out.data.length);
       for (let i = 0; i < ink.length; i++) {
         ink[i] = 1 - Math.max(0, Math.min(1, out.data[i]));
       }
-      artistMap = { data: ink, w: out.dims[3], h: out.dims[2] };
+      neuralMaps[kind] = { data: ink, w: out.dims[3], h: out.dims[2] };
     } else {
-      // [1,h,w,3], -1..1 painted RGB
+      // NHWC rgb, -1..1
       const ow = out.dims[2], oh = out.dims[1], on = ow * oh;
-      const chans = [new Float32Array(on), new Float32Array(on), new Float32Array(on)];
-      for (let i = 0; i < on; i++) {
-        chans[0][i] = (out.data[i * 3] + 1) * 127.5;
-        chans[1][i] = (out.data[i * 3 + 1] + 1) * 127.5;
-        chans[2][i] = (out.data[i * 3 + 2] + 1) * 127.5;
+      if (cfg.out === 'ink-rgb') {
+        const ink = new Float32Array(on);
+        for (let i = 0; i < on; i++) {
+          const r = (out.data[i * 3] + 1) * 127.5;
+          const g = (out.data[i * 3 + 1] + 1) * 127.5;
+          const b = (out.data[i * 3 + 2] + 1) * 127.5;
+          const luma = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+          ink[i] = 1 - Math.max(0, Math.min(1, luma));
+        }
+        neuralMaps[kind] = { data: ink, w: ow, h: oh };
+      } else {
+        const chans = [new Float32Array(on), new Float32Array(on), new Float32Array(on)];
+        for (let i = 0; i < on; i++) {
+          chans[0][i] = (out.data[i * 3] + 1) * 127.5;
+          chans[1][i] = (out.data[i * 3 + 1] + 1) * 127.5;
+          chans[2][i] = (out.data[i * 3 + 2] + 1) * 127.5;
+        }
+        neuralMaps[kind] = { chans, w: ow, h: oh };
       }
-      paintMap = { chans, w: ow, h: oh };
     }
   } catch (e) {
     dlog(kind + ' model failed: ' + e);
@@ -1284,17 +1297,17 @@ async function restyle(showBusy, quick) {
   if (!srcCanvas.width) return;
   if (showBusy) { busy(true); await raf(); }
   const kind = state.style.preset;
-  if ((kind === 'artist' && !artistMap) || (kind === 'painting' && !paintMap)) {
+  if (NEURAL_CFG[kind] && !neuralMaps[kind]) {
     if (showBusy) busy(false);
     await ensureNeuralMap(kind);
-    if (kind === 'artist' ? !artistMap : !paintMap) return;  // failed; reverted
+    if (!neuralMaps[kind]) return;   // failed; preset was reverted, retoast'd
     if (showBusy) busy(true);
     buildStylePreviews();
   }
   const from = quick && srcSmall.width ? srcSmall : srcCanvas;
   try {
     const data = from.getContext('2d').getImageData(0, 0, from.width, from.height);
-    const out = applyStyle(data, { ...state.style, artistMap, paintMap });
+    const out = applyStyle(data, { ...state.style, neuralMaps });
     outCanvas.width = out.width; outCanvas.height = out.height;
     outCanvas.getContext('2d').putImageData(out, 0, 0);
     overlay.setTexture(outCanvas);
@@ -1361,16 +1374,16 @@ function buildStylePreviews() {
     const tctx = tile.getContext('2d');
     tctx.fillStyle = '#eeeae0';           // paper-ish, so transparent lines read
     tctx.fillRect(0, 0, tile.width, tile.height);
-    if ((p.id === 'artist' && !artistMap) || (p.id === 'painting' && !paintMap)) {
+    if (NEURAL_CFG[p.id] && !neuralMaps[p.id]) {
       // Model hasn't run yet - a placeholder invites the tap that loads it.
       tctx.fillStyle = '#8a8578';
       tctx.font = `${Math.round(tile.height * 0.3)}px serif`;
       tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
-      tctx.fillText(p.id === 'artist' ? '\u270E' : '\uD83C\uDFA8', tile.width / 2, tile.height * 0.42);
+      tctx.fillText(NEURAL_CFG[p.id].out === 'rgb' ? '\uD83C\uDFA8' : '\u270E', tile.width / 2, tile.height * 0.42);
       tctx.font = `600 ${Math.max(9, Math.round(tile.height * 0.09))}px sans-serif`;
       tctx.fillText('tap to draw', tile.width / 2, tile.height * 0.72);
     } else {
-      const out = applyStyle(data, { ...state.style, preset: p.id, artistMap, paintMap });
+      const out = applyStyle(data, { ...state.style, preset: p.id, neuralMaps });
       const tmp = document.createElement('canvas');
       tmp.width = out.width; tmp.height = out.height;
       tmp.getContext('2d').putImageData(out, 0, 0);
