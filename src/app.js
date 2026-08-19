@@ -315,7 +315,7 @@ async function startCameraInner() {
   requestWakeLock();
   loop();
   toast('Point the camera at the printed canvas');
-  if (!srcCanvas.width && !openTab) selectTab('image');
+  if (!hasPicture && !openTab) selectTab('image');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
      + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
@@ -909,12 +909,16 @@ function applyGesture() {
 }
 
 /* ------------------------------------------------------------ the image */
+// A fresh canvas element reports width 300 (the HTML default), so
+// srcCanvas.width can never distinguish "no picture yet" - this flag can.
+let hasPicture = false;
 const srcCanvas = document.createElement('canvas');
 const srcSmall = document.createElement('canvas');   // half-res, for live sliders
 const srcThumb = document.createElement('canvas');   // tiny, for the style-picker gallery
 const outCanvas = document.createElement('canvas');
 
 function drawSourceFrom(bitmap, w, h) {
+  hasPicture = true;
   const k = Math.min(1, MAX_SOURCE / Math.max(w, h));
   srcCanvas.width = Math.max(1, Math.round(w * k));
   srcCanvas.height = Math.max(1, Math.round(h * k));
@@ -1202,7 +1206,7 @@ function loadScriptOnce(src) {
 
 async function ensureNeuralMap(kind, quiet) {
   const cfg = NEURAL_CFG[kind];
-  if (!cfg || neuralBusy || neuralMaps[kind] || !srcCanvas.width) return;
+  if (!cfg || neuralBusy || neuralMaps[kind] || !hasPicture) return;
   neuralBusy = true;
   if (!quiet) busy(true);
   try {
@@ -1303,7 +1307,7 @@ async function ensureNeuralMap(kind, quiet) {
 // an image is actually loaded with the Style tab open.
 let neuralQueueRunning = false;
 async function ensureAllNeuralMaps(kinds) {
-  if (neuralQueueRunning || !srcCanvas.width) return;
+  if (neuralQueueRunning || !hasPicture) return;
   neuralQueueRunning = true;
   try {
     let announced = false;
@@ -1335,7 +1339,7 @@ async function ensureAllNeuralMaps(kinds) {
 
 
 async function restyle(showBusy, quick) {
-  if (!srcCanvas.width) return;
+  if (!hasPicture) return;
   if (showBusy) { busy(true); await raf(); }
   const kind = state.style.preset;
   if (NEURAL_CFG[kind] && !neuralMaps[kind]) {

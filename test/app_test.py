@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""End-to-end test of dist/papertrace.html.
+"""End-to-end test of docs/index.html against the current UI.
 
 getUserMedia is replaced with a canvas stream showing a synthetic desk: a sheet
-of paper with printed tags on it, moving as if hand-held. That exercises the real
-pipeline - camera element, detector, map, WebGL overlay and UI - in one go.
+of paper with printed tags on it, moving as if hand-held. That exercises the
+real pipeline - camera element, detector, map, WebGL overlay and UI - in one
+go. The page is served over a local http server (not file://) because the
+starter pictures and the neural models are fetch()ed at runtime.
+
+The desk deliberately reuses canvas-preset tag ids (0-4) in a non-canvas
+arrangement with per-tag rotations: since the tracker can now take a learned
+map over with the known-canvas preset, this doubles as a regression test that
+the preset does NOT falsely adopt an unrelated desk.
 """
-import json, os, sys
+import http.server, json, os, socket, sys, threading
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIST = os.path.join(ROOT, "dist", "papertrace.html")
+DOCS = os.path.join(ROOT, "docs")
 DICT = json.load(open(os.path.join(ROOT, "build", "dictionary.json")))
 
 FAKE_CAMERA = """
@@ -78,9 +85,37 @@ FAKE_CAMERA = """
 }
 """
 
+INK_FRACTION = """() => {
+  render();
+  const gl = overlay.gl;
+  const px = new Uint8Array(gl.canvas.width * gl.canvas.height * 4);
+  gl.readPixels(0, 0, gl.canvas.width, gl.canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let opaque = 0;
+  for (let i = 3; i < px.length; i += 4) if (px[i] > 12) opaque++;
+  return opaque / (gl.canvas.width * gl.canvas.height);
+}"""
+
+
+def serve_docs():
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **k):
+            super().__init__(*a, directory=DOCS, **k)
+
+        def log_message(self, *a):
+            pass
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), Quiet)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, port
+
 
 def run(headed=False):
     failures, notes = [], []
+    httpd, port = serve_docs()
     with sync_playwright() as p:
         b = p.chromium.launch(headless=not headed, args=[
             "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
@@ -94,7 +129,7 @@ def run(headed=False):
                 if m.type == "error" else None)
 
         page.add_init_script(f"({FAKE_CAMERA})({json.dumps(DICT)})")
-        page.goto("file://" + DIST)
+        page.goto(f"http://127.0.0.1:{port}/index.html")
         page.wait_for_timeout(600)
 
         def open_tab(name):
@@ -110,6 +145,8 @@ def run(headed=False):
                 failures.append(name)
 
         check("start screen visible", page.is_visible("#start h1"))
+        check("hero art drew itself", page.eval_on_selector_all(
+            "#heroArt path", "els => els.length") > 10)
         check("no boot errors", not errors, "; ".join(errors[:3]))
 
         # ---------------------------------------------------------- camera
@@ -118,26 +155,50 @@ def run(headed=False):
         vw = page.evaluate("() => document.getElementById('video').videoWidth")
         check("camera feed running", vw == 960, f"videoWidth={vw}")
 
+        # With no picture chosen, the Picture panel opens itself.
+        check("picture panel opens as the next step",
+              page.evaluate("() => openTab") == "image",
+              f"openTab={page.evaluate('() => openTab')}")
+
         # Let the map settle over a few seconds of simulated motion.
         page.wait_for_timeout(3500)
         status = page.inner_text("#status")
         mapsize = page.evaluate("() => markerMap.size")
         check("tags detected and anchored", mapsize >= 4, f"{mapsize}/5 anchored, status '{status}'")
         check("reports a lock", "locked" in status, f"status '{status}'")
+        check("desk does not falsely adopt the canvas preset",
+              not page.evaluate("() => markerMap.presetAdopted"))
 
         pose = page.evaluate("() => !!state.pose")
         check("pose available", pose)
 
+        # ------------------------------------------------- picture -> crop
+        count = page.eval_on_selector_all("#lib button", "els => els.length")
+        check("starter library populated", count == 6, f"{count} tiles")
+        page.click('#lib button[data-key="daisy"]')
+        try:
+            page.wait_for_selector("#crop.on", timeout=8000)
+            check("crop screen opens", True)
+        except Exception:
+            check("crop screen opens", False)
+        page.click("#btnCropUse")
+        page.wait_for_timeout(800)
+        check("picture committed", page.evaluate("() => hasPicture"),
+              f"srcCanvas {page.evaluate('() => srcCanvas.width')}px")
+
+        # The artist model auto-applies once its map is computed (local fetch,
+        # wasm inference in a worker - give it a while under software GL).
+        try:
+            page.wait_for_function("() => !!neuralMaps.artist", timeout=90000)
+            check("artist map computed", True)
+        except Exception:
+            check("artist map computed", False, "timed out after 90s")
+        page.wait_for_timeout(600)
+        check("artist style auto-applied", page.evaluate("() => state.style.preset") == "artist",
+              f"preset={page.evaluate('() => state.style.preset')}")
+
         # ------------------------------------------------------- rendering
-        drew = page.evaluate("""() => {
-          render();
-          const gl = overlay.gl;
-          const px = new Uint8Array(gl.canvas.width * gl.canvas.height * 4);
-          gl.readPixels(0, 0, gl.canvas.width, gl.canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
-          let opaque = 0;
-          for (let i = 3; i < px.length; i += 4) if (px[i] > 12) opaque++;
-          return opaque / (gl.canvas.width * gl.canvas.height);
-        }""")
+        drew = page.evaluate(INK_FRACTION)
         check("overlay actually rendered", drew > 0.002, f"{drew*100:.2f}% of the screen has ink")
 
         page.screenshot(path=os.path.join(ROOT, "build", "shot_main.png"))
@@ -214,72 +275,74 @@ def run(headed=False):
 
         # ------------------------------------------------------------- UI
         open_tab('style')
-        for preset in ["Sketch", "Bold outline", "Contour map", "Stencil", "Ghost", "Original"]:
-            page.click(f'#presets .chip:has-text("{preset}")')
-            page.wait_for_timeout(320)
-        page.click('#presets .chip:has-text("Clean lines")')
-        page.wait_for_timeout(350)
-        check("every style preset applies", not errors, "; ".join(errors[:3]))
+        tiles = page.eval_on_selector_all(".styleTile span", "els => els.map(e => e.textContent)")
+        check("style gallery lists all presets",
+              tiles[:1] == ["Artist sketch"] and "Ghost" in tiles and "Original" in tiles,
+              f"tiles={tiles}")
+        for preset in ["Ghost", "Original"]:      # instant, no model needed
+            page.click(f'.styleTile:has-text("{preset}")')
+            page.wait_for_timeout(350)
+        check("instant styles apply", page.evaluate("() => state.style.preset") == "original"
+              and not errors, "; ".join(errors[:3]))
         page.screenshot(path=os.path.join(ROOT, "build", "shot_style.png"))
 
         page.eval_on_selector("#opacity", "e => { e.value = 55; e.dispatchEvent(new Event('input')); }")
-        page.eval_on_selector("#threshold", "e => { e.value = 70; e.dispatchEvent(new Event('input')); }")
-        page.wait_for_timeout(400)
-        check("sliders apply", page.evaluate("() => Math.abs(state.opacity - 0.55) < 0.01"))
+        page.wait_for_timeout(300)
+        check("opacity slider applies", page.evaluate("() => Math.abs(state.opacity - 0.55) < 0.01"))
 
-        open_tab('image')
-        count = page.eval_on_selector_all("#lib button", "els => els.length")
-        check("image library populated", count >= 10, f"{count} entries")
-        page.click('#lib button[data-key="sunflower"]')
-        page.wait_for_timeout(700)
-        check("library image loads", page.evaluate("() => state.selected === 'sunflower'"))
+        check("starter selection tracked", page.evaluate("() => state.selected") is None,
+              "selection clears once the crop is committed")
         page.screenshot(path=os.path.join(ROOT, "build", "shot_library.png"))
 
-        # --------------------------------------------------- placement
+        # --------------------------------------------- camera view gestures
         open_tab('place')
-        before = page.evaluate("() => ({ ...state.place })")
-        page.mouse.move(215, 430)
+        # Pan only means anything once zoomed in - drive the zoom slider first.
+        page.eval_on_selector("#camZoom", "e => { e.value = 200; e.dispatchEvent(new Event('input')); }")
+        page.wait_for_timeout(200)
+        check("camera zoom applies", page.evaluate("() => state.camZoom") == 2.0,
+              f"camZoom={page.evaluate('() => state.camZoom')}")
+
+        before = page.evaluate("() => ({ x: state.camPanX, y: state.camPanY })")
+        page.mouse.move(215, 300)
         page.mouse.down()
         for i in range(1, 9):
-            page.mouse.move(215 + i * 8, 430 + i * 5)
+            page.mouse.move(215 + i * 8, 300 + i * 5)
             page.wait_for_timeout(20)
         page.mouse.up()
         page.wait_for_timeout(150)
-        after = page.evaluate("() => ({ ...state.place })")
+        after = page.evaluate("() => ({ x: state.camPanX, y: state.camPanY })")
         moved = abs(after["x"] - before["x"]) + abs(after["y"] - before["y"])
-        check("drag moves the image", moved > 0.02, f"moved {moved:.3f} paper units")
+        check("drag pans the camera view", moved > 5, f"moved {moved:.1f} px")
 
         page.click("#btnLock")
         page.wait_for_timeout(120)
-        locked_before = page.evaluate("() => ({ ...state.place })")
-        page.mouse.move(215, 430)
+        locked_before = page.evaluate("() => ({ x: state.camPanX, y: state.camPanY })")
+        page.mouse.move(215, 300)
         page.mouse.down()
-        page.mouse.move(300, 500)
+        page.mouse.move(300, 380)
         page.mouse.up()
         page.wait_for_timeout(150)
-        locked_after = page.evaluate("() => ({ ...state.place })")
-        check("lock blocks dragging",
+        locked_after = page.evaluate("() => ({ x: state.camPanX, y: state.camPanY })")
+        check("lock blocks camera dragging",
               abs(locked_after["x"] - locked_before["x"]) < 1e-9)
         page.click("#btnLock")
+        page.eval_on_selector("#camZoom", "e => { e.value = 100; e.dispatchEvent(new Event('input')); }")
 
         page.click("#btnFit")
         page.wait_for_timeout(120)
         check("fit to tags works", page.evaluate("() => state.place.scale > 0.2"))
 
+        # ------------------------------------------ tracking tools (in View)
+        page.eval_on_selector('[data-panel="place"] details:last-of-type', "e => e.open = true")
+        page.wait_for_timeout(700)
+        info = page.inner_text("#mapinfo")
+        check("tracking section reports the map", "anchored" in info, info)
+
         # Regression: freehand uses a different coordinate frame, so it needs its
         # own placement - reusing the tag-map one throws the image off-screen.
-        open_tab('tags')
         page.click("#freehand")
         page.wait_for_timeout(700)
-        free_ink = page.evaluate("""() => {
-          render();
-          const gl = overlay.gl;
-          const px = new Uint8Array(gl.canvas.width * gl.canvas.height * 4);
-          gl.readPixels(0, 0, gl.canvas.width, gl.canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
-          let opaque = 0;
-          for (let i = 3; i < px.length; i += 4) if (px[i] > 12) opaque++;
-          return opaque / (gl.canvas.width * gl.canvas.height);
-        }""")
+        free_ink = page.evaluate(INK_FRACTION)
         check("freehand keeps the image on screen", free_ink > 0.004,
               f"{free_ink*100:.2f}% of the screen has ink")
         page.click("#freehand")
@@ -287,22 +350,7 @@ def run(headed=False):
         check("returning from freehand restores tag anchoring",
               page.evaluate("() => !state.freehand && !!state.pose"))
 
-        # -------------------------------------------------------- tags UI
-        open_tab('tags')
-        page.wait_for_timeout(700)
-        info = page.inner_text("#mapinfo")
-        check("tag panel reports the map", "anchored" in info, info)
-
-        page.click("#btnTags2")
-        page.wait_for_timeout(500)
-        tags = page.eval_on_selector_all("#tagwrap .tagcell", "e => e.length")
-        check("printable tag sheet renders", tags == len(DICT["codes"]), f"{tags} tags")
-        page.screenshot(path=os.path.join(ROOT, "build", "shot_tags.png"))
-        page.click("#printsheet [data-close]")
-        page.wait_for_timeout(200)
-
         # ------------------------------------------------------- recovery
-        open_tab('tags')
         # Read the size in the same synchronous turn as the click - a detection
         # frame can (correctly) start re-learning tags before the next timeout.
         after_reset = page.evaluate(
@@ -318,6 +366,7 @@ def run(headed=False):
 
         check("no errors during the whole run", not errors, "; ".join(errors[:4]))
         b.close()
+    httpd.shutdown()
 
     for n in notes:
         print("       " + n)
