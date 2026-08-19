@@ -7,6 +7,7 @@
  * ------------------------------------------------------------------------- */
 
 const STYLE_PRESETS = [
+  { id: 'artist',   name: 'Artist sketch', hint: 'A neural model trained on artist line drawings draws your picture. Downloads ~28 MB once, then works offline.' },
   { id: 'clean',    name: 'Clean lines', hint: 'Crisp single-weight outline. The default for tracing.' },
   { id: 'sketch',   name: 'Sketch',      hint: 'Softer pencil-like lines that keep shading detail.' },
   { id: 'bold',     name: 'Bold outline', hint: 'Only the strongest edges, thickened. Good in bright light.' },
@@ -323,6 +324,24 @@ function dogInk(gray, w, h, sigma, k, soft) {
   return out;
 }
 
+/** Bilinear resample of a single-channel float map to (w, h). */
+function resampleMap(map, w, h) {
+  if (map.w === w && map.h === h) return map.data;
+  const out = new Float32Array(w * h);
+  const sx = (map.w - 1) / Math.max(1, w - 1);
+  const sy = (map.h - 1) / Math.max(1, h - 1);
+  for (let y = 0; y < h; y++) {
+    const fy = y * sy, y0 = Math.floor(fy), y1 = Math.min(map.h - 1, y0 + 1), ty = fy - y0;
+    for (let x = 0; x < w; x++) {
+      const fx = x * sx, x0 = Math.floor(fx), x1 = Math.min(map.w - 1, x0 + 1), tx = fx - x0;
+      const a = map.data[y0 * map.w + x0] * (1 - tx) + map.data[y0 * map.w + x1] * tx;
+      const b = map.data[y1 * map.w + x0] * (1 - tx) + map.data[y1 * map.w + x1] * tx;
+      out[y * w + x] = a * (1 - ty) + b * ty;
+    }
+  }
+  return out;
+}
+
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a || 1e-6)));
   return t * t * (3 - 2 * t);
@@ -440,6 +459,18 @@ function applyStyle(imageData, o) {
       for (let i = 0; i < n; i++) alpha[i] = ink[i];
       break;
     }
+    case 'artist': {
+      // o.artistMap is the neural line drawing (ink strength 0..1) computed
+      // asynchronously in app.js - this case only maps it onto the paper.
+      // Without a map yet, output stays transparent; the app shows progress.
+      if (o.artistMap) {
+        const ink = resampleMap(o.artistMap, w, h);
+        // Keep the model's soft pencil greys; threshold trims faint marks.
+        const lo = 0.06 + threshold * 0.3;
+        for (let i = 0; i < n; i++) alpha[i] = smoothstep(lo, lo + 0.3, ink[i]);
+      }
+      break;
+    }
     case 'clean': {
       // Region boundaries carry the drawing; a coarse DoG on the flattened
       // luma adds the line-like details (branches, eyelids, lettering) that
@@ -554,9 +585,10 @@ function applyStyle(imageData, o) {
       throw new Error('unknown preset: ' + o.preset);
   }
 
-  if (!rgb) {
+  if (!rgb && o.preset !== 'artist') {
     // Sub-ink fog (partial alphas from smoothstep tails) reads as grey dust
-    // on busy photos - snap it to nothing before sizing the islands.
+    // on busy photos - snap it to nothing before sizing the islands. The
+    // artist preset is exempt: its soft greys ARE the pencil shading.
     for (let i = 0; i < n; i++) if (alpha[i] < 0.3) alpha[i] = 0;
     despeckle(alpha, w, h, Math.max(8, Math.round(n * 8e-5)));
   }

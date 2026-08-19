@@ -925,6 +925,7 @@ function drawSourceFrom(bitmap, w, h) {
   ct.clearRect(0, 0, srcThumb.width, srcThumb.height);
   ct.drawImage(bitmap, 0, 0, srcThumb.width, srcThumb.height);
   state.aspect = srcCanvas.width / srcCanvas.height;
+  artistMap = null;              // new picture -> stale neural line map
 }
 
 function loadImageEl(src) {
@@ -1152,6 +1153,96 @@ function cancelCrop() {
 
 let restyleTimer = null;
 /** While a slider is moving, restyle the half-size copy so the AR loop keeps up. */
+/* ---------------------------------------------------- neural line drawing */
+// The 'artist' preset runs the Informative Drawings model (Chan et al. 2022,
+// MIT) in-browser via onnxruntime-web. Runtime + model are self-hosted next
+// to index.html (~28 MB total) and fetched lazily on first use; Cache
+// Storage keeps them across sessions since GitHub Pages sends short
+// max-age headers. The line map is computed once per source image and
+// cached - the style sliders only remap it, no re-inference.
+let artistMap = null;        // {data: Float32Array ink 0..1, w, h}
+let artistBusy = false;
+let ortSession = null;
+
+async function cachedFetch(url) {
+  try {
+    const cache = await caches.open('papertrace-models-v1');
+    const hit = await cache.match(url);
+    if (hit) return await hit.arrayBuffer();
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    await cache.put(url, resp.clone());
+    return await resp.arrayBuffer();
+  } catch (e) {
+    // Cache Storage can be unavailable (private mode); plain fetch still works.
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    return await resp.arrayBuffer();
+  }
+}
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const sc = document.createElement('script');
+    sc.src = src;
+    sc.onload = resolve;
+    sc.onerror = () => reject(new Error('failed to load ' + src));
+    document.head.appendChild(sc);
+  });
+}
+
+async function ensureArtistMap() {
+  if (artistMap || artistBusy || !srcCanvas.width) return;
+  artistBusy = true;
+  busy(true);
+  try {
+    if (!ortSession) {
+      toast('Downloading the drawing model (one-time, ~28 MB)…', 6000);
+      await loadScriptOnce('ort.min.js');
+      ort.env.wasm.wasmPaths = './';
+      ort.env.wasm.numThreads = 1;   // no COOP/COEP headers on static hosting
+      const model = await cachedFetch('lineart.onnx');
+      ortSession = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
+      dlog('artist model loaded');
+    }
+    toast('Drawing your picture…', 4000);
+    // The model is fully convolutional; 512px is the quality/speed sweet
+    // spot (~2 s in WASM). Dims snap to multiples of 4 for the conv stack.
+    const k = Math.min(1, 512 / Math.max(srcCanvas.width, srcCanvas.height));
+    const w = Math.max(4, Math.round(srcCanvas.width * k / 4) * 4);
+    const h = Math.max(4, Math.round(srcCanvas.height * k / 4) * 4);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(srcCanvas, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data;
+    const npx = w * h;
+    const input = new Float32Array(npx * 3);
+    for (let i = 0; i < npx; i++) {
+      input[i] = d[i * 4] / 255;
+      input[npx + i] = d[i * 4 + 1] / 255;
+      input[2 * npx + i] = d[i * 4 + 2] / 255;
+    }
+    const t0 = performance.now();
+    const res = await ortSession.run({ input: new ort.Tensor('float32', input, [1, 3, h, w]) });
+    dlog(`artist inference ${Math.round(performance.now() - t0)}ms at ${w}x${h}`);
+    const out = res.output;   // [1,1,h,w], 0..1, dark = line
+    const ink = new Float32Array(out.data.length);
+    for (let i = 0; i < ink.length; i++) {
+      ink[i] = 1 - Math.max(0, Math.min(1, out.data[i]));
+    }
+    artistMap = { data: ink, w: out.dims[3], h: out.dims[2] };
+  } catch (e) {
+    dlog('artist model failed: ' + e);
+    toast('Could not load the drawing model - check your connection');
+    if (state.style.preset === 'artist') state.style.preset = 'clean';
+  } finally {
+    artistBusy = false;
+    busy(false);
+  }
+}
+
 function restyleSoon(quick) {
   clearTimeout(restyleTimer);
   restyleTimer = setTimeout(() => restyle(false, quick !== false), 120);
@@ -1160,10 +1251,17 @@ function restyleSoon(quick) {
 async function restyle(showBusy, quick) {
   if (!srcCanvas.width) return;
   if (showBusy) { busy(true); await raf(); }
+  if (state.style.preset === 'artist' && !artistMap) {
+    if (showBusy) busy(false);
+    await ensureArtistMap();
+    if (!artistMap) return;          // failed; preset was reverted, retoast'd
+    if (showBusy) busy(true);
+    buildStylePreviews();
+  }
   const from = quick && srcSmall.width ? srcSmall : srcCanvas;
   try {
     const data = from.getContext('2d').getImageData(0, 0, from.width, from.height);
-    const out = applyStyle(data, state.style);
+    const out = applyStyle(data, { ...state.style, artistMap });
     outCanvas.width = out.width; outCanvas.height = out.height;
     outCanvas.getContext('2d').putImageData(out, 0, 0);
     overlay.setTexture(outCanvas);
@@ -1225,17 +1323,26 @@ function buildStylePreviews() {
   const data = srcThumb.getContext('2d', { willReadFrequently: true })
     .getImageData(0, 0, srcThumb.width, srcThumb.height);
   for (const p of STYLE_PRESETS) {
-    const out = applyStyle(data, { ...state.style, preset: p.id });
-    const tmp = document.createElement('canvas');
-    tmp.width = out.width; tmp.height = out.height;
-    tmp.getContext('2d').putImageData(out, 0, 0);
-
     const tile = document.createElement('canvas');
-    tile.width = out.width; tile.height = out.height;
+    tile.width = data.width; tile.height = data.height;
     const tctx = tile.getContext('2d');
     tctx.fillStyle = '#eeeae0';           // paper-ish, so transparent lines read
     tctx.fillRect(0, 0, tile.width, tile.height);
-    tctx.drawImage(tmp, 0, 0);            // alpha-composited, unlike putImageData
+    if (p.id === 'artist' && !artistMap) {
+      // Model hasn't run yet - a placeholder invites the tap that loads it.
+      tctx.fillStyle = '#8a8578';
+      tctx.font = `${Math.round(tile.height * 0.3)}px serif`;
+      tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+      tctx.fillText('\u270E', tile.width / 2, tile.height * 0.42);
+      tctx.font = `600 ${Math.max(9, Math.round(tile.height * 0.09))}px sans-serif`;
+      tctx.fillText('tap to draw', tile.width / 2, tile.height * 0.72);
+    } else {
+      const out = applyStyle(data, { ...state.style, preset: p.id, artistMap });
+      const tmp = document.createElement('canvas');
+      tmp.width = out.width; tmp.height = out.height;
+      tmp.getContext('2d').putImageData(out, 0, 0);
+      tctx.drawImage(tmp, 0, 0);          // alpha-composited, unlike putImageData
+    }
 
     const b = document.createElement('button');
     b.className = 'styleTile' + (p.id === state.style.preset ? ' on' : '');
