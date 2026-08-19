@@ -1920,6 +1920,169 @@ function integralMean(gray, w, h, block, out) {
 }
 
 /**
+ * Kuwahara filter - structure-preserving smoothing, integral-image
+ * accelerated so the radius is free.
+ *
+ * This is the difference between tracing a photo and tracing noise. A plain
+ * blur softens leaf/grass/skin texture and real edges alike, so the edge
+ * detector downstream either sees both or neither. Kuwahara instead replaces
+ * each pixel with the mean of the least-varying quadrant around it: texture
+ * averages away, but a quadrant that straddles a real edge has high variance
+ * and never gets picked, so edges stay crisp. Busy photos (forests, streets)
+ * collapse into flat paintable regions with clean boundaries.
+ *
+ * `channels` (optional) are smoothed with the same quadrant choice as the
+ * luma, which keeps colour regions aligned with the structure.
+ */
+function kuwahara(luma, w, h, r, channels) {
+  const iw = w + 1;
+  function integral(src) {
+    const I = new Float64Array(iw * (h + 1));
+    for (let y = 0; y < h; y++) {
+      let row = 0;
+      for (let x = 0; x < w; x++) {
+        row += src[y * w + x];
+        I[(y + 1) * iw + x + 1] = I[y * iw + x + 1] + row;
+      }
+    }
+    return I;
+  }
+  const sq = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) sq[i] = luma[i] * luma[i];
+  const Is = integral(luma), Iq = integral(sq);
+  const Ic = (channels || []).map(integral);
+  const rect = (I, x0, y0, x1, y1) =>
+    I[(y1 + 1) * iw + x1 + 1] - I[y0 * iw + x1 + 1] - I[(y1 + 1) * iw + x0] + I[y0 * iw + x0];
+
+  const out = new Float32Array(w * h);
+  const outC = (channels || []).map(() => new Float32Array(w * h));
+  for (let y = 0; y < h; y++) {
+    const yA0 = Math.max(0, y - r), yB1 = Math.min(h - 1, y + r);
+    for (let x = 0; x < w; x++) {
+      const xA0 = Math.max(0, x - r), xB1 = Math.min(w - 1, x + r);
+      // quadrants: [x0,y0,x1,y1] all inclusive, each containing the pixel
+      let best = Infinity, bx0 = x, by0 = y, bx1 = x, by1 = y, bArea = 1;
+      for (let q = 0; q < 4; q++) {
+        const x0 = q & 1 ? x : xA0, x1 = q & 1 ? xB1 : x;
+        const y0 = q & 2 ? y : yA0, y1 = q & 2 ? yB1 : y;
+        const area = (x1 - x0 + 1) * (y1 - y0 + 1);
+        const s = rect(Is, x0, y0, x1, y1);
+        const v = rect(Iq, x0, y0, x1, y1) / area - (s / area) * (s / area);
+        if (v < best) { best = v; bx0 = x0; by0 = y0; bx1 = x1; by1 = y1; bArea = area; }
+      }
+      const i = y * w + x;
+      out[i] = rect(Is, bx0, by0, bx1, by1) / bArea;
+      for (let c = 0; c < Ic.length; c++) outC[c][i] = rect(Ic[c], bx0, by0, bx1, by1) / bArea;
+    }
+  }
+  return { luma: out, channels: outC };
+}
+
+/**
+ * Remove ink islands smaller than minArea pixels. Busy photos leave the edge
+ * detectors with a dusting of tiny disconnected specks ("confetti") that no
+ * one wants to trace; the real subject survives as large connected strokes.
+ */
+function despeckle(alpha, w, h, minArea) {
+  const n = w * h;
+  // A long 1px contour line is low-area but high-extent - it's a stroke, not
+  // a speck. Drop a component only when it is small in BOTH senses.
+  const minSpan = Math.max(24, Math.round((w + h) / 40));
+  const seen = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  const comp = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (seen[i] || alpha[i] < 0.3) continue;
+    let top = 0, size = 0;
+    let x0 = w, x1 = 0, y0 = h, y1 = 0;
+    stack[top++] = i; seen[i] = 1;
+    while (top > 0) {
+      const p = stack[--top];
+      comp[size++] = p;
+      const px = p % w, py = (p / w) | 0;
+      if (px < x0) x0 = px; if (px > x1) x1 = px;
+      if (py < y0) y0 = py; if (py > y1) y1 = py;
+      // 8-connectivity: 1px lines step diagonally, touching only at corners.
+      // 4-connectivity would shatter every diagonal stroke into single-pixel
+      // "components" and delete them all as specks.
+      const xl = px > 0, xr = px < w - 1, yu = py > 0, yd = py < h - 1;
+      if (xl && !seen[p - 1] && alpha[p - 1] >= 0.3) { seen[p - 1] = 1; stack[top++] = p - 1; }
+      if (xr && !seen[p + 1] && alpha[p + 1] >= 0.3) { seen[p + 1] = 1; stack[top++] = p + 1; }
+      if (yu && !seen[p - w] && alpha[p - w] >= 0.3) { seen[p - w] = 1; stack[top++] = p - w; }
+      if (yd && !seen[p + w] && alpha[p + w] >= 0.3) { seen[p + w] = 1; stack[top++] = p + w; }
+      if (xl && yu && !seen[p - w - 1] && alpha[p - w - 1] >= 0.3) { seen[p - w - 1] = 1; stack[top++] = p - w - 1; }
+      if (xr && yu && !seen[p - w + 1] && alpha[p - w + 1] >= 0.3) { seen[p - w + 1] = 1; stack[top++] = p - w + 1; }
+      if (xl && yd && !seen[p + w - 1] && alpha[p + w - 1] >= 0.3) { seen[p + w - 1] = 1; stack[top++] = p + w - 1; }
+      if (xr && yd && !seen[p + w + 1] && alpha[p + w + 1] >= 0.3) { seen[p + w + 1] = 1; stack[top++] = p + w + 1; }
+    }
+    if (size < minArea && (x1 - x0) + (y1 - y0) < minSpan) {
+      for (let k = 0; k < size; k++) alpha[comp[k]] = 0;
+    }
+  }
+  return alpha;
+}
+
+/**
+ * Merge quantised regions smaller than minRegion into their dominant
+ * neighbour. This is the step every real paint-by-numbers generator has:
+ * without it a busy photo shatters into hundreds of outlined islands no one
+ * could trace, let alone paint. Runs a few passes so merges cascade.
+ */
+function mergeSmallRegions(qi, cols, w, h, minRegion, passes) {
+  const n = w * h;
+  const label = new Int32Array(n);
+  const stack = new Int32Array(n);
+  const comp = new Int32Array(n);
+  for (let pass = 0; pass < passes; pass++) {
+    label.fill(0);
+    let next = 0, merged = 0;
+    for (let i = 0; i < n; i++) {
+      if (label[i]) continue;
+      const myQi = qi[i];
+      next++;
+      let top = 0, size = 0;
+      stack[top++] = i; label[i] = next;
+      while (top > 0) {
+        const p = stack[--top];
+        comp[size++] = p;
+        const px = p % w, py = (p / w) | 0;
+        if (px > 0 && !label[p - 1] && qi[p - 1] === myQi) { label[p - 1] = next; stack[top++] = p - 1; }
+        if (px < w - 1 && !label[p + 1] && qi[p + 1] === myQi) { label[p + 1] = next; stack[top++] = p + 1; }
+        if (py > 0 && !label[p - w] && qi[p - w] === myQi) { label[p - w] = next; stack[top++] = p - w; }
+        if (py < h - 1 && !label[p + w] && qi[p + w] === myQi) { label[p + w] = next; stack[top++] = p + w; }
+      }
+      if (size >= minRegion) continue;
+      // Vote for the neighbouring value with the longest shared border.
+      const counts = new Map();
+      for (let k = 0; k < size; k++) {
+        const p = comp[k];
+        const px = p % w, py = (p / w) | 0;
+        for (const nb of [px > 0 ? p - 1 : -1, px < w - 1 ? p + 1 : -1,
+                          py > 0 ? p - w : -1, py < h - 1 ? p + w : -1]) {
+          if (nb < 0 || qi[nb] === myQi) continue;
+          const e = counts.get(qi[nb]);
+          if (e) e.count++; else counts.set(qi[nb], { count: 1, sample: nb });
+        }
+      }
+      let best = null;
+      for (const e of counts.values()) if (!best || e.count > best.count) best = e;
+      if (!best) continue;
+      const bq = qi[best.sample];
+      const sr = cols ? cols[best.sample * 3] : 0;
+      const sg = cols ? cols[best.sample * 3 + 1] : 0;
+      const sb = cols ? cols[best.sample * 3 + 2] : 0;
+      for (let k = 0; k < size; k++) {
+        const p = comp[k];
+        qi[p] = bq;
+        if (cols) { cols[p * 3] = sr; cols[p * 3 + 1] = sg; cols[p * 3 + 2] = sb; }
+      }
+      merged++;
+    }
+    if (!merged) break;
+  }
+}
+
+/**
  * Difference-of-Gaussians edge response, normalised by its own mean absolute
  * deviation.
  *
@@ -2010,25 +2173,81 @@ function applyStyle(imageData, o) {
   // everything that looks for edges works from a lightly denoised copy.
   const denoised = gaussBlur(gray, w, h, 0.8 * Math.max(1, scale));
 
+  // Structure image for the edge presets: Kuwahara flattens texture (leaves,
+  // grass, brick, skin grain) into flat regions while keeping real edges
+  // crisp, so the detectors trace shapes instead of noise. Two passes: the
+  // first softens texture, the second collapses what's left into flat
+  // paintable regions. The detail slider widens the radius.
+  const kr = Math.round((3.5 + (1 - detail) * 6) * Math.max(1, scale));
+  const needsStructure = o.preset === 'bold'
+    || o.preset === 'contour' || o.preset === 'stencil';
+  const structure = needsStructure
+    ? kuwahara(kuwahara(denoised, w, h, kr).luma, w, h, kr).luma : null;
+
+  // Shared by 'clean' and 'paint': flatten colour along with luma, then
+  // quantise into regions. The region boundaries are the closed "colouring
+  // book" outlines a person would actually trace - unlike raw edge response,
+  // they stay coherent even on texture-heavy photos (forests, streets).
+  function flattenedRegions(levels) {
+    const rCh = new Float32Array(n), gCh = new Float32Array(n), bCh = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = src[i * 4 + 3] / 255;
+      rCh[i] = src[i * 4] * a + 255 * (1 - a);
+      gCh[i] = src[i * 4 + 1] * a + 255 * (1 - a);
+      bCh[i] = src[i * 4 + 2] * a + 255 * (1 - a);
+    }
+    const k1 = kuwahara(denoised, w, h, kr, [rCh, gCh, bCh]);
+    const k2 = kuwahara(k1.luma, w, h, kr, k1.channels);
+    const ch = k2.channels.map((c) => gaussBlur(c, w, h, 1));
+    const step = 256 / levels;
+    const qi = new Int32Array(n);
+    const cols = new Uint8ClampedArray(n * 3);
+    for (let i = 0; i < n; i++) {
+      const qr = Math.min(levels - 1, Math.floor(ch[0][i] / step));
+      const qg = Math.min(levels - 1, Math.floor(ch[1][i] / step));
+      const qb = Math.min(levels - 1, Math.floor(ch[2][i] / step));
+      qi[i] = (qr * levels + qg) * levels + qb;
+      cols[i * 3] = Math.round((qr + 0.5) * step);
+      cols[i * 3 + 1] = Math.round((qg + 0.5) * step);
+      cols[i * 3 + 2] = Math.round((qb + 0.5) * step);
+    }
+    // Less detail -> larger minimum region -> fewer, bigger paintable shapes.
+    const minRegion = Math.round(n * (3e-4 + (1 - detail) * 2e-3));
+    mergeSmallRegions(qi, cols, w, h, minRegion, 3);
+    return { luma: k2.luma, qi, cols };
+  }
+
   switch (o.preset) {
     case 'sketch': {
-      // Finer scale and a lower confidence bar than 'clean' - catches the
-      // soft internal shading edges clean's coarser pass throws away, at
-      // the cost of a noisier, more hand-drawn line.
-      const sigma = (0.45 + (1 - detail) * 1.5) * Math.max(0.6, scale);
-      const ink = dogInk(denoised, w, h, sigma, 0.45 + threshold * 2.0, 2.2);
+      // One light Kuwahara pass (half radius) keeps the soft shading edges
+      // that clean's heavy flattening throws away; a wide DoG transition
+      // renders them as broad pencil strokes instead of speckle.
+      const soft = kuwahara(denoised, w, h, Math.max(1, kr >> 1)).luma;
+      const sigma = (0.9 + (1 - detail) * 2.0) * Math.max(0.7, scale);
+      const ink = dogInk(soft, w, h, sigma, 0.55 + threshold * 2.2, 2.5);
       for (let i = 0; i < n; i++) alpha[i] = ink[i];
       break;
     }
     case 'clean': {
-      const sigma = (0.7 + (1 - detail) * 2.6) * Math.max(0.7, scale);
-      const ink = dogInk(denoised, w, h, sigma, 0.9 + threshold * 3.6, 0.35);
-      for (let i = 0; i < n; i++) alpha[i] = ink[i];
+      // Region boundaries carry the drawing; a coarse DoG on the flattened
+      // luma adds the line-like details (branches, eyelids, lettering) that
+      // colour quantisation alone misses.
+      const reg = flattenedRegions(Math.max(3, Math.round(4 + threshold * 6)));
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          alpha[i] = ((x + 1 < w && reg.qi[i + 1] !== reg.qi[i])
+                   || (y + 1 < h && reg.qi[i + w] !== reg.qi[i])) ? 1 : 0;
+        }
+      }
+      const sigma = (1.3 + (1 - detail) * 2.6) * Math.max(0.7, scale);
+      const ink = dogInk(reg.luma, w, h, sigma, 1.2 + threshold * 3.6, 0.35);
+      for (let i = 0; i < n; i++) alpha[i] = Math.max(alpha[i], ink[i]);
       break;
     }
     case 'bold': {
       const sigma = (1.2 + (1 - detail) * 3.4) * Math.max(0.7, scale);
-      const g = gaussBlur(denoised, w, h, sigma);
+      const g = gaussBlur(structure, w, h, sigma);
       const mag = new Float32Array(n);
       let sum = 0;
       for (let y = 1; y < h - 1; y++) {
@@ -2051,7 +2270,7 @@ function applyStyle(imageData, o) {
     }
     case 'contour': {
       const sigma = (1.2 + (1 - detail) * 4.5) * Math.max(0.7, scale);
-      const g = gaussBlur(denoised, w, h, sigma);
+      const g = gaussBlur(structure, w, h, sigma);
       // Quantise across the picture's actual tonal range - a low-contrast
       // photo would otherwise fall entirely inside one or two fixed bands.
       let lo = Infinity, hi = -Infinity;
@@ -2075,35 +2294,14 @@ function applyStyle(imageData, o) {
       // Posterize in full colour (not just tone) and outline the region
       // boundaries - the only preset carrying colour through to the page,
       // so tracing gives you both the lines and which colour goes where.
-      const sigma = (1.2 + (1 - detail) * 4.0) * Math.max(0.7, scale);
-      const rCh = new Float32Array(n), gCh = new Float32Array(n), bCh = new Float32Array(n);
-      for (let i = 0; i < n; i++) {
-        const a = src[i * 4 + 3] / 255;
-        rCh[i] = src[i * 4] * a + 255 * (1 - a);
-        gCh[i] = src[i * 4 + 1] * a + 255 * (1 - a);
-        bCh[i] = src[i * 4 + 2] * a + 255 * (1 - a);
-      }
-      const rB = gaussBlur(rCh, w, h, sigma);
-      const gB = gaussBlur(gCh, w, h, sigma);
-      const bB = gaussBlur(bCh, w, h, sigma);
-      const levels = Math.max(2, Math.round(3 + threshold * 5));
-      const step = 256 / levels;
-      const qi = new Int32Array(n);
-      rgb = new Uint8ClampedArray(n * 3);
-      for (let i = 0; i < n; i++) {
-        const qr = Math.min(levels - 1, Math.floor(rB[i] / step));
-        const qg = Math.min(levels - 1, Math.floor(gB[i] / step));
-        const qb = Math.min(levels - 1, Math.floor(bB[i] / step));
-        qi[i] = (qr * levels + qg) * levels + qb;
-        rgb[i * 3] = Math.round((qr + 0.5) * step);
-        rgb[i * 3 + 1] = Math.round((qg + 0.5) * step);
-        rgb[i * 3 + 2] = Math.round((qb + 0.5) * step);
-      }
+      const reg = flattenedRegions(Math.max(2, Math.round(3 + threshold * 5)));
+      rgb = reg.cols;
       const outlineCol = o.colour || [16, 16, 20];
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const i = y * w + x;
-          const edge = (x + 1 < w && qi[i + 1] !== qi[i]) || (y + 1 < h && qi[i + w] !== qi[i]);
+          const edge = (x + 1 < w && reg.qi[i + 1] !== reg.qi[i])
+                    || (y + 1 < h && reg.qi[i + w] !== reg.qi[i]);
           if (edge) { rgb[i * 3] = outlineCol[0]; rgb[i * 3 + 1] = outlineCol[1]; rgb[i * 3 + 2] = outlineCol[2]; }
           alpha[i] = 1;
         }
@@ -2111,7 +2309,7 @@ function applyStyle(imageData, o) {
       break;
     }
     case 'stencil': {
-      const g = gaussBlur(denoised, w, h, 0.5 + (1 - detail) * 2.5);
+      const g = gaussBlur(structure, w, h, 0.5 + (1 - detail) * 2.5);
       // The slider directly sets how much of the picture becomes ink
       // (see percentileThreshold) rather than relying on Otsu, which can
       // pick a near-useless split on a light subject over a light background.
@@ -2144,6 +2342,12 @@ function applyStyle(imageData, o) {
       throw new Error('unknown preset: ' + o.preset);
   }
 
+  if (!rgb) {
+    // Sub-ink fog (partial alphas from smoothstep tails) reads as grey dust
+    // on busy photos - snap it to nothing before sizing the islands.
+    for (let i = 0; i < n; i++) if (alpha[i] < 0.3) alpha[i] = 0;
+    despeckle(alpha, w, h, Math.max(8, Math.round(n * 8e-5)));
+  }
   if (o.invert && !rgb) for (let i = 0; i < n; i++) alpha[i] = 1 - alpha[i];
   if (thickR > 0 && !rgb) alpha = dilate(alpha, w, h, thickR);
 
