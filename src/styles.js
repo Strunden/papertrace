@@ -23,14 +23,6 @@ const STYLE_PRESETS = [
   { id: 'original', name: 'Original',    hint: 'Untouched, for artwork that is already line art.' },
 ];
 
-const LINE_COLOURS = [
-  { id: 'black', name: 'Black', rgb: [16, 16, 20] },
-  { id: 'white', name: 'White', rgb: [255, 255, 255] },
-  { id: 'red',   name: 'Red',   rgb: [235, 45, 60] },
-  { id: 'cyan',  name: 'Cyan',  rgb: [40, 215, 235] },
-  { id: 'lime',  name: 'Lime',  rgb: [140, 240, 60] },
-];
-
 /* ------------------------------------------------------------ primitives */
 
 /** Separable max filter - dilates lines to make them thicker. */
@@ -88,8 +80,8 @@ function smoothstep(a, b, x) {
 
 /**
  * @param {ImageData} imageData source pixels (already scaled down)
- * @param {object} o {preset, threshold, thickness, invert, colour, knockWhite,
- *                    neuralMaps} - threshold/thickness are 0..1
+ * @param {object} o {preset, threshold, thickness, knockWhite, neuralMaps}
+ *                   - threshold/thickness are 0..1, defaults tuned in here
  * @returns {ImageData} straight-alpha RGBA
  */
 function applyStyle(imageData, o) {
@@ -175,7 +167,6 @@ function applyStyle(imageData, o) {
       throw new Error('unknown preset: ' + o.preset);
   }
 
-  if (o.invert && !rgb) for (let i = 0; i < n; i++) alpha[i] = 1 - alpha[i];
   if (thickR > 0 && !rgb) alpha = dilate(alpha, w, h, thickR);
 
   const out = new ImageData(w, h);

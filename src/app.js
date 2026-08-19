@@ -11,7 +11,7 @@ const el = {
   video: $('video'), gl: $('gl'), hud: $('hud'), touch: $('touch'),
   sheet: $('sheet'), dock: $('dock'), status: $('status'), statusDot: $('statusDot'),
   toast: $('toast'), busy: $('busy'), lib: $('lib'), file: $('file'),
-  stylePreviews: $('stylePreviews'), colours: $('colours'), taglist: $('taglist'),
+  stylePreviews: $('stylePreviews'), taglist: $('taglist'),
   mapinfo: $('mapinfo'), placeinfo: $('placeinfo'), cropCanvas: $('cropCanvas'),
 };
 
@@ -29,8 +29,7 @@ const state = {
   opacity: 0.85,
   // 'original' works instantly for everything (the built-in flowers ARE
   // line art); the Artist sketch tile is one tap away for photos.
-  style: { preset: 'original', threshold: 0.18, thickness: 0.15,
-           invert: false, knockWhite: true, colour: [16, 16, 20] },
+  style: { preset: 'original' },   // applyStyle carries the tuned defaults
   place: { x: 0, y: 0, scale: 3, scaleY: null, angle: 0, flip: false },
   presetFrame: null,
   placed: false,
@@ -1147,7 +1146,6 @@ function cancelCrop() {
   if (!state.running) showScreen('start');
 }
 
-let restyleTimer = null;
 /** While a slider is moving, restyle the half-size copy so the AR loop keeps up. */
 /* ---------------------------------------------------- neural line drawing */
 // The 'artist' preset runs the Informative Drawings model (Chan et al. 2022,
@@ -1199,14 +1197,14 @@ function loadScriptOnce(src) {
   });
 }
 
-async function ensureNeuralMap(kind) {
+async function ensureNeuralMap(kind, quiet) {
   const cfg = NEURAL_CFG[kind];
   if (!cfg || neuralBusy || neuralMaps[kind] || !srcCanvas.width) return;
   neuralBusy = true;
-  busy(true);
+  if (!quiet) busy(true);
   try {
     if (!ortSessions[cfg.file]) {
-      toast('Downloading the ' + kind + ' model (one-time, ' + cfg.size + ')...', 6000);
+      if (!quiet) toast('Downloading the ' + kind + ' model (one-time, ' + cfg.size + ')...', 6000);
       await loadScriptOnce('ort.min.js');
       ort.env.wasm.wasmPaths = './';
       ort.env.wasm.numThreads = 1;   // no COOP/COEP headers on static hosting
@@ -1215,7 +1213,7 @@ async function ensureNeuralMap(kind) {
       dlog(kind + ' model loaded');
     }
     const session = ortSessions[cfg.file];
-    toast(cfg.out === 'rgb' ? 'Painting your picture...' : 'Drawing your picture...', 4000);
+    if (!quiet) toast(cfg.out === 'rgb' ? 'Painting your picture...' : 'Drawing your picture...', 4000);
     // All models are fully convolutional; 512px is the quality/speed sweet
     // spot (~1-3 s in single-threaded WASM). snap keeps each conv stack happy.
     const k = Math.min(1, 512 / Math.max(srcCanvas.width, srcCanvas.height));
@@ -1281,18 +1279,44 @@ async function ensureNeuralMap(kind) {
     }
   } catch (e) {
     dlog(kind + ' model failed: ' + e);
-    toast('Could not load the ' + kind + ' model - check your connection');
+    if (!quiet) toast('Could not load the ' + kind + ' model - check your connection');
     if (state.style.preset === kind) state.style.preset = 'original';
   } finally {
     neuralBusy = false;
-    busy(false);
+    if (!quiet) busy(false);
   }
 }
 
-function restyleSoon(quick) {
-  clearTimeout(restyleTimer);
-  restyleTimer = setTimeout(() => restyle(false, quick !== false), 120);
+// Render every neural style's preview in the background, one model at a
+// time, filling gallery tiles in as they finish. Placeholder tiles saying
+// "tap to draw" read as broken - a preview gallery should just show the
+// previews. Models still download only once (Cache Storage) and only when
+// an image is actually loaded with the Style tab open.
+let neuralQueueRunning = false;
+async function ensureAllNeuralMaps() {
+  if (neuralQueueRunning || !srcCanvas.width) return;
+  neuralQueueRunning = true;
+  try {
+    let announced = false;
+    for (const kind of Object.keys(NEURAL_CFG)) {
+      if (neuralMaps[kind]) continue;
+      if (!announced) {
+        toast('Preparing style previews - each model downloads once', 3500);
+        announced = true;
+        buildStylePreviews();          // relabel placeholders to "drawing..."
+      }
+      await ensureNeuralMap(kind, true);
+      if (!neuralMaps[kind]) break;    // offline or failed - stop the queue
+      buildStylePreviews();
+      if (state.style.preset === kind) restyle(false, false);
+    }
+  } finally {
+    neuralQueueRunning = false;
+    buildStylePreviews();
+  }
 }
+
+
 
 async function restyle(showBusy, quick) {
   if (!srcCanvas.width) return;
@@ -1339,23 +1363,7 @@ function markSelected() {
     b.classList.toggle('on', b.dataset.key === state.selected));
 }
 
-function buildStyleUI() {
-  el.colours.innerHTML = '';
-  for (const c of LINE_COLOURS) {
-    const b = document.createElement('button');
-    b.className = 'chip sw' + (c.id === 'black' ? ' on' : '');
-    b.style.background = `rgb(${c.rgb.join(',')})`;
-    b.title = c.name;
-    b.addEventListener('click', () => {
-      state.style.colour = c.rgb;
-      el.colours.querySelectorAll('.chip').forEach((x) => x.classList.remove('on'));
-      b.classList.add('on');
-      restyle(true);
-      buildStylePreviews();
-    });
-    el.colours.appendChild(b);
-  }
-}
+
 
 /**
  * The style picker shows each preset already rendered on your actual
@@ -1382,7 +1390,7 @@ function buildStylePreviews() {
       tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
       tctx.fillText(NEURAL_CFG[p.id].out === 'rgb' ? '\uD83C\uDFA8' : '\u270E', tile.width / 2, tile.height * 0.42);
       tctx.font = `600 ${Math.max(9, Math.round(tile.height * 0.09))}px sans-serif`;
-      tctx.fillText('tap to draw', tile.width / 2, tile.height * 0.72);
+      tctx.fillText(neuralQueueRunning ? 'drawing...' : 'tap to draw', tile.width / 2, tile.height * 0.72);
     } else {
       const out = applyStyle(data, { ...state.style, preset: p.id, neuralMaps });
       const tmp = document.createElement('canvas');
@@ -1448,7 +1456,7 @@ function selectTab(name) {
   el.sheet.classList.toggle('open', !!openTab);
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === openTab));
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('on', p.dataset.panel === openTab));
-  if (openTab === 'style') buildStylePreviews();
+  if (openTab === 'style') { buildStylePreviews(); ensureAllNeuralMaps(); }
 }
 document.querySelectorAll('.tab').forEach((t) =>
   t.addEventListener('click', () => selectTab(t.dataset.tab)));
@@ -1615,20 +1623,7 @@ function wire() {
       ? 'Freehand: the image is pinned to the screen, not the paper'
       : 'Back to tag anchoring');
   });
-  $('invert').addEventListener('change', (e) => {
-    state.style.invert = e.target.checked; restyle(true); buildStylePreviews();
-  });
-  $('knock').addEventListener('change', (e) => {
-    state.style.knockWhite = e.target.checked; restyle(true); buildStylePreviews();
-  });
-
   bindSlider('opacity', () => state.opacity, (v) => { state.opacity = v; });
-  bindSlider('threshold', () => state.style.threshold,
-             (v) => { state.style.threshold = v; restyleSoon(true); },
-             () => { restyle(false, false); buildStylePreviews(); });
-  bindSlider('thickness', () => state.style.thickness,
-             (v) => { state.style.thickness = v; restyleSoon(true); },
-             () => { restyle(false, false); buildStylePreviews(); });
 
   el.file.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) loadUserFile(e.target.files[0]);
@@ -1647,7 +1642,6 @@ function wire() {
 
 /* ------------------------------------------------------------------ boot */
 buildLibrary();
-buildStyleUI();
 wire();
 updatePlaceInfo();
 chooseLibrary('rose');
