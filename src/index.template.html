@@ -27,26 +27,11 @@
 </div>
 
 <div id="sheet">
-  <!-- ------------------------------------------------------------ image -->
-  <div class="panel" data-panel="image">
-    <h3>Picture</h3>
-    <div class="lib" id="lib"></div>
-    <input type="file" id="file" accept="image/*" hidden>
-  </div>
-
-  <!-- ------------------------------------------------------------ style -->
-  <div class="panel" data-panel="style">
-    <h3>Style</h3>
-    <div class="styleGallery" id="stylePreviews"></div>
-
-    <div class="row"><label>Opacity</label>
-      <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
-  </div>
-
-  <!-- ------------------------------------------------------------ place -->
   <div class="panel" data-panel="place">
     <h3>View</h3>
     <p class="note">Drag to pan, pinch to zoom.</p>
+    <div class="row"><label>Opacity</label>
+      <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
     <div class="row"><label>Zoom</label>
       <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
     <div class="btnrow">
@@ -87,8 +72,8 @@
 </div>
 
 <div id="dock">
-  <button class="tab" data-tab="image">Picture</button>
-  <button class="tab" data-tab="style">Style</button>
+  <button class="tab" id="dockPicture">Picture</button>
+  <button class="tab" id="dockStyle">Style</button>
   <button class="tab" data-tab="place">View</button>
 </div>
 
@@ -104,9 +89,9 @@
       Trace it with a real pencil.</p>
 
     <ol class="steps reveal r3b">
-      <li><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the canvas</a></li>
       <li>Choose a picture</li>
       <li>Pick a style</li>
+      <li><a class="pdflink" href="papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Print the canvas</a></li>
       <li>Trace it</li>
     </ol>
 
@@ -118,12 +103,35 @@
     </div>
 
     <div class="startActions reveal r4">
-      <button class="btn ink" id="btnStart">Start camera</button>
+      <button class="btn ink" id="btnStart">Choose a picture</button>
     </div>
 
     <p class="startFoot reveal r5">
       <button class="linklike" id="btnHelp">how it works</button><br>
       <span class="privacyline">Nothing leaves your device.</span></p>
+  </div>
+</div>
+
+<!-- ============================================================ pick -->
+<div class="screen paper" id="pick">
+  <div class="inner">
+    <h1>Choose a picture</h1>
+    <div class="lib" id="lib"></div>
+    <input type="file" id="file" accept="image/*" hidden>
+    <p class="startFoot"><button class="linklike" data-close>back</button></p>
+  </div>
+</div>
+
+<!-- ======================================================= style pick -->
+<div class="screen paper" id="stylepick">
+  <div class="inner">
+    <h1>Pick a style</h1>
+    <div class="styleGallery" id="stylePreviews"></div>
+    <div class="hero"><button class="btn ink" id="btnTrace">Trace it</button></div>
+    <p class="startFoot">You&rsquo;ll need the printed canvas -
+      <a class="pdflink linklike" href="papertrace-canvas-A4.pdf" target="_blank"
+         rel="noopener">print it (A4 PDF)</a><br>
+      <button class="linklike" id="btnBackToPick">choose a different picture</button></p>
   </div>
 </div>
 

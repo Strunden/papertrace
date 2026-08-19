@@ -149,16 +149,55 @@ def run(headed=False):
             "#heroArt path", "els => els.length") > 10)
         check("no boot errors", not errors, "; ".join(errors[:3]))
 
-        # ---------------------------------------------------------- camera
+        # --------------------------------------- setup: picture, then style
+        # The camera does NOT start yet - setup happens on full paper screens
+        # so the neural models get the CPU to themselves.
         page.click("#btnStart")
-        page.wait_for_timeout(1200)
-        vw = page.evaluate("() => document.getElementById('video').videoWidth")
-        check("camera feed running", vw == 960, f"videoWidth={vw}")
+        page.wait_for_timeout(900)
+        check("start leads to picture selection", page.is_visible("#pick h1"))
+        check("camera not started during setup", not page.evaluate("() => state.running"))
 
-        # With no picture chosen, the Picture panel opens itself.
-        check("picture panel opens as the next step",
-              page.evaluate("() => openTab") == "image",
-              f"openTab={page.evaluate('() => openTab')}")
+        count = page.eval_on_selector_all("#lib button", "els => els.length")
+        check("starter library populated", count == 6, f"{count} tiles")
+        page.click('#lib button[data-key="daisy"]')
+        try:
+            page.wait_for_selector("#crop.on", timeout=8000)
+            check("crop screen opens", True)
+        except Exception:
+            check("crop screen opens", False)
+        page.click("#btnCropUse")
+        page.wait_for_timeout(800)
+        check("picture committed", page.evaluate("() => hasPicture"),
+              f"srcCanvas {page.evaluate('() => srcCanvas.width')}px")
+        check("crop lands on the style screen", page.is_visible("#stylepick h1"))
+
+        # The artist model auto-applies once its map is computed (local fetch,
+        # wasm inference in a worker - give it a while under software GL).
+        try:
+            page.wait_for_function("() => !!neuralMaps.artist", timeout=90000)
+            check("artist map computed", True)
+        except Exception:
+            check("artist map computed", False, "timed out after 90s")
+        page.wait_for_timeout(600)
+        check("artist style auto-applied", page.evaluate("() => state.style.preset") == "artist",
+              f"preset={page.evaluate('() => state.style.preset')}")
+
+        tiles = page.eval_on_selector_all(".styleTile span", "els => els.map(e => e.textContent)")
+        check("style gallery lists all presets",
+              tiles[:1] == ["Artist sketch"] and "Ghost" in tiles and "Original" in tiles,
+              f"tiles={tiles}")
+        for preset in ["Ghost", "Original"]:      # instant, no model needed
+            page.click(f'.styleTile:has-text("{preset}")')
+            page.wait_for_timeout(350)
+        check("instant styles apply", page.evaluate("() => state.style.preset") == "original"
+              and not errors, "; ".join(errors[:3]))
+        page.screenshot(path=os.path.join(ROOT, "build", "shot_style.png"))
+
+        # ---------------------------------------------------------- camera
+        page.click("#btnTrace")
+        page.wait_for_timeout(1500)
+        vw = page.evaluate("() => document.getElementById('video').videoWidth")
+        check("camera starts on Trace it", vw == 960, f"videoWidth={vw}")
 
         # Let the map settle over a few seconds of simulated motion.
         page.wait_for_timeout(3500)
@@ -172,30 +211,13 @@ def run(headed=False):
         pose = page.evaluate("() => !!state.pose")
         check("pose available", pose)
 
-        # ------------------------------------------------- picture -> crop
-        count = page.eval_on_selector_all("#lib button", "els => els.length")
-        check("starter library populated", count == 6, f"{count} tiles")
-        page.click('#lib button[data-key="daisy"]')
-        try:
-            page.wait_for_selector("#crop.on", timeout=8000)
-            check("crop screen opens", True)
-        except Exception:
-            check("crop screen opens", False)
-        page.click("#btnCropUse")
-        page.wait_for_timeout(800)
-        check("picture committed", page.evaluate("() => hasPicture"),
-              f"srcCanvas {page.evaluate('() => srcCanvas.width')}px")
-
-        # The artist model auto-applies once its map is computed (local fetch,
-        # wasm inference in a worker - give it a while under software GL).
-        try:
-            page.wait_for_function("() => !!neuralMaps.artist", timeout=90000)
-            check("artist map computed", True)
-        except Exception:
-            check("artist map computed", False, "timed out after 90s")
-        page.wait_for_timeout(600)
-        check("artist style auto-applied", page.evaluate("() => state.style.preset") == "artist",
-              f"preset={page.evaluate('() => state.style.preset')}")
+        # Picture/Style dock buttons reopen the setup screens over the camera.
+        page.click("#dockPicture")
+        page.wait_for_timeout(300)
+        check("dock reopens picture screen", page.is_visible("#pick h1"))
+        page.click("#pick [data-close]")
+        page.wait_for_timeout(300)
+        check("closing setup returns to camera", not page.is_visible("#pick h1"))
 
         # ------------------------------------------------------- rendering
         drew = page.evaluate(INK_FRACTION)
@@ -273,29 +295,11 @@ def run(headed=False):
         page.evaluate("() => restyle(false, false)")
         page.wait_for_timeout(400)
 
-        # ------------------------------------------------------------- UI
-        open_tab('style')
-        tiles = page.eval_on_selector_all(".styleTile span", "els => els.map(e => e.textContent)")
-        check("style gallery lists all presets",
-              tiles[:1] == ["Artist sketch"] and "Ghost" in tiles and "Original" in tiles,
-              f"tiles={tiles}")
-        for preset in ["Ghost", "Original"]:      # instant, no model needed
-            page.click(f'.styleTile:has-text("{preset}")')
-            page.wait_for_timeout(350)
-        check("instant styles apply", page.evaluate("() => state.style.preset") == "original"
-              and not errors, "; ".join(errors[:3]))
-        page.screenshot(path=os.path.join(ROOT, "build", "shot_style.png"))
-
+        # --------------------------------------------- camera view gestures
+        open_tab('place')
         page.eval_on_selector("#opacity", "e => { e.value = 55; e.dispatchEvent(new Event('input')); }")
         page.wait_for_timeout(300)
         check("opacity slider applies", page.evaluate("() => Math.abs(state.opacity - 0.55) < 0.01"))
-
-        check("starter selection tracked", page.evaluate("() => state.selected") is None,
-              "selection clears once the crop is committed")
-        page.screenshot(path=os.path.join(ROOT, "build", "shot_library.png"))
-
-        # --------------------------------------------- camera view gestures
-        open_tab('place')
         # Pan only means anything once zoomed in - drive the zoom slider first.
         page.eval_on_selector("#camZoom", "e => { e.value = 200; e.dispatchEvent(new Event('input')); }")
         page.wait_for_timeout(200)

@@ -315,7 +315,6 @@ async function startCameraInner() {
   requestWakeLock();
   loop();
   toast('Point the camera at the printed canvas');
-  if (!hasPicture && !openTab) selectTab('image');
   const settings = track.getSettings ? track.getSettings() : {};
   dlog(`camera started: ${settings.width}x${settings.height}@${settings.frameRate || '?'}fps `
      + `worker=${!!detWorker} vfc=${useVFC} detW=${state.detW}`);
@@ -1135,12 +1134,12 @@ async function commitCrop() {
     await restyle(true);
     placeNewImage();
     buildStylePreviews();
-    toast('Loaded ' + cropSrc.name);
     // Photos should get their neural styles without any further taps: start
     // the queue now, and let it auto-apply Artist sketch when ready (unless
-    // the user picks a style themselves first).
+    // the user picks a style themselves first). All models render here -
+    // the camera is not running yet, so the CPU is free.
     state.autoStyle = true;
-    ensureAllNeuralMaps(['artist']);
+    ensureAllNeuralMaps();
   } finally {
     busy(false);
   }
@@ -1152,7 +1151,8 @@ function cancelCrop() {
   cropSrc = null;
   cropGesture = null;
   hideScreens();
-  if (!state.running) showScreen('start');
+  if (hasPicture) { showScreen('stylepick'); buildStylePreviews(); }
+  else if (!state.running) showScreen('pick');
 }
 
 /** While a slider is moving, restyle the half-size copy so the AR loop keeps up. */
@@ -1500,7 +1500,6 @@ function selectTab(name) {
   el.sheet.classList.toggle('open', !!openTab);
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === openTab));
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('on', p.dataset.panel === openTab));
-  if (openTab === 'style') { buildStylePreviews(); ensureAllNeuralMaps(); }
 }
 document.querySelectorAll('.tab').forEach((t) =>
   t.addEventListener('click', () => selectTab(t.dataset.tab)));
@@ -1557,10 +1556,18 @@ function markerSvg(id, mm) {
 /* ------------------------------------------------------------------ wire */
 function wire() {
   $('btnStart').addEventListener('click', () => {
-    // Lift the paper sheet away while the camera starts underneath.
+    // Lift the sheet away, then land on picture selection. The camera only
+    // starts after a picture AND style are chosen - all the heavy neural
+    // work happens before tracking ever needs the CPU.
     $('start').classList.add('leaving');
-    startCamera();
+    setTimeout(() => showScreen('pick'), 480);
   });
+  $('btnTrace').addEventListener('click', () => {
+    if (!state.running) startCamera(); else hideScreens();
+  });
+  $('btnBackToPick').addEventListener('click', () => showScreen('pick'));
+  $('dockPicture').addEventListener('click', () => showScreen('pick'));
+  $('dockStyle').addEventListener('click', () => { showScreen('stylepick'); buildStylePreviews(); });
   $('btnHelp').addEventListener('click', () => showScreen('help'));
   $('btnHelp2').addEventListener('click', () => showScreen('help'));
   document.querySelectorAll('[data-close]').forEach((b) =>

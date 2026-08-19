@@ -295,3 +295,28 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   #heroArt path { animation: none !important; stroke-dashoffset: 0 !important; }
   #start.leaving { transform: none; }
 }
+
+/* ------------------------------------------------ paper setup screens */
+/* Picture and style are chosen on full paper screens BEFORE the camera
+   starts - the neural models run here, with the CPU all to themselves,
+   and the see-through mode keeps only the controls needed while drawing. */
+.screen.paper {
+  background:
+    radial-gradient(140% 90% at 50% -10%, #faf6ec 0%, #f2ebdb 55%, #e9e0cc 100%);
+  color: #26221b;
+}
+.screen.paper h1 { color: #26221b; font-size: 30px; margin-bottom: 16px; }
+.screen.paper .startFoot { text-align: center; }
+.screen.paper .linklike { background: none; border: none; padding: 0; color: #a29a88;
+  font-size: inherit; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px; }
+.paper .lib button { background: #fff; border: 2px solid rgba(0, 0, 0, .07);
+  box-shadow: 0 2px 10px rgba(38, 34, 27, .08); }
+.paper .lib button.on { border-color: var(--accent); }
+.paper .lib .add { background: transparent; border: 1px dashed #c9bfa6; color: #8a8168; }
+.paper .styleTile { background: #fff; border: 2px solid rgba(0, 0, 0, .07);
+  box-shadow: 0 2px 10px rgba(38, 34, 27, .08); }
+.paper .styleTile span { color: #55503f; }
+.paper .styleTile.on { border-color: var(--accent); }
+.paper .styleTile.on span { color: #26221b; }
+.paper .hero { justify-content: center; margin-top: 22px; }
