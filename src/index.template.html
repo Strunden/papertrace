@@ -130,80 +130,80 @@
       Your picture appears inside its frame.</p>
 
     <svg id="howAnim" viewBox="0 0 300 210" aria-hidden="true">
-      <!-- the printed sheet, drawn like the real one: 8 marks around the
-           border and the picture frame printed in the middle -->
-      <rect x="30" y="18" width="150" height="180" rx="4" fill="#fffdf6"
-            stroke="#d8cfb8" stroke-width="1.5"/>
-      <g fill="#2b261d">
-        <rect class="mark" x="40" y="28" width="11" height="11"/>
-        <rect class="mark" x="99.5" y="28" width="11" height="11" style="animation-delay:.08s"/>
-        <rect class="mark" x="159" y="28" width="11" height="11" style="animation-delay:.16s"/>
-        <rect class="mark" x="40" y="102.5" width="11" height="11" style="animation-delay:.24s"/>
-        <rect class="mark" x="159" y="102.5" width="11" height="11" style="animation-delay:.32s"/>
-        <rect class="mark" x="40" y="177" width="11" height="11" style="animation-delay:.4s"/>
-        <rect class="mark" x="99.5" y="177" width="11" height="11" style="animation-delay:.48s"/>
-        <rect class="mark" x="159" y="177" width="11" height="11" style="animation-delay:.56s"/>
+      <defs>
+        <clipPath id="phoneScreen"><rect x="89" y="42" width="90" height="138" rx="4"/></clipPath>
+      </defs>
+
+      <!-- the real world: the printed sheet, empty except marks + frame -->
+      <g>
+        <rect x="30" y="18" width="150" height="180" rx="4" fill="#fffdf6"
+              stroke="#d8cfb8" stroke-width="1.5"/>
+        <g fill="#2b261d">
+          <rect class="mark" x="40" y="28" width="11" height="11"/>
+          <rect class="mark" x="99.5" y="28" width="11" height="11" style="animation-delay:.08s"/>
+          <rect class="mark" x="159" y="28" width="11" height="11" style="animation-delay:.16s"/>
+          <rect class="mark" x="40" y="102.5" width="11" height="11" style="animation-delay:.24s"/>
+          <rect class="mark" x="159" y="102.5" width="11" height="11" style="animation-delay:.32s"/>
+          <rect class="mark" x="40" y="177" width="11" height="11" style="animation-delay:.4s"/>
+          <rect class="mark" x="99.5" y="177" width="11" height="11" style="animation-delay:.48s"/>
+          <rect class="mark" x="159" y="177" width="11" height="11" style="animation-delay:.56s"/>
+        </g>
+        <rect x="73" y="52" width="64" height="97" fill="none"
+              stroke="#2b261d" stroke-width="1.2"/>
       </g>
-      <!-- the printed frame the picture lands in -->
-      <rect x="73" y="52" width="64" height="97" fill="none"
-            stroke="#2b261d" stroke-width="1.2"/>
-      <!-- the daisy appearing inside the frame -->
-      <g class="appear" stroke="#5a5342" fill="none" stroke-width="1.6"
-         stroke-linecap="round" opacity="0">
-        <circle cx="105" cy="100" r="7"/>
-        <ellipse cx="105.0" cy="81.0" rx="4.5" ry="12" transform="rotate(0 105.0 81.0)"/>
-          <ellipse cx="116.2" cy="84.6" rx="4.5" ry="12" transform="rotate(36 116.2 84.6)"/>
-          <ellipse cx="123.1" cy="94.1" rx="4.5" ry="12" transform="rotate(72 123.1 94.1)"/>
-          <ellipse cx="123.1" cy="105.9" rx="4.5" ry="12" transform="rotate(108 123.1 105.9)"/>
-          <ellipse cx="116.2" cy="115.4" rx="4.5" ry="12" transform="rotate(144 116.2 115.4)"/>
-          <ellipse cx="105.0" cy="119.0" rx="4.5" ry="12" transform="rotate(180 105.0 119.0)"/>
-          <ellipse cx="93.8" cy="115.4" rx="4.5" ry="12" transform="rotate(216 93.8 115.4)"/>
-          <ellipse cx="86.9" cy="105.9" rx="4.5" ry="12" transform="rotate(252 86.9 105.9)"/>
-          <ellipse cx="86.9" cy="94.1" rx="4.5" ry="12" transform="rotate(288 86.9 94.1)"/>
-          <ellipse cx="93.8" cy="84.6" rx="4.5" ry="12" transform="rotate(324 93.8 84.6)"/>
-        <path d="M105 119 C 104 130, 107 136, 105 144"/>
-      </g>
-      <!-- one petal being traced in real pencil -->
-      <path class="stroke" d="M100 76 C 96 66, 102 60, 105 62 C 108 60, 114 66, 110 76"
-            stroke="#26221b" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+      <!-- the pencil traces the petal that pokes out of the window - the
+           paper stroke continues the on-screen guide across the edge -->
+      <path class="stroke" d="M89 95.9 C 80 96.4, 74.6 98, 74.5 100 C 74.6 102, 80 103.6, 89 104.1"
+            stroke="#26221b" stroke-width="2" fill="none" stroke-linecap="round"/>
       <g class="pencil">
-        <g transform="translate(96, 74) rotate(35)">
+        <g transform="translate(87, 95) rotate(-50)">
           <rect x="-3" y="-32" width="6.5" height="24" rx="2" fill="#c9a227"/>
           <path d="M-3 -8 L0.3 1.5 L3.5 -8 Z" fill="#e8d9b8"/>
           <path d="M-0.6 -1.2 L0.3 1.5 L1.4 -1.2 Z" fill="#26221b"/>
         </g>
       </g>
-      <!-- the phone, showing the same sheet with the daisy locked on it -->
+
+      <!-- the phone: a window held over the sheet. Its screen shows the SAME
+           sheet, aligned 1:1, plus the daisy that exists only in there -->
       <g class="phone">
-        <rect x="198" y="42" width="76" height="134" rx="12" fill="#26221b"/>
-        <rect x="204" y="50" width="64" height="118" rx="5" fill="#fffdf6"/>
+        <rect x="80" y="32" width="108" height="158" rx="15" fill="#26221b"/>
+        <g clip-path="url(#phoneScreen)">
+          <rect x="89" y="42" width="90" height="138" fill="#fffdf6"/>
+          <rect x="30" y="18" width="150" height="180" rx="4" fill="#fffdf6"
+              stroke="#d8cfb8" stroke-width="1.5"/>
         <g fill="#2b261d">
-          <rect x="209" y="56" width="5.5" height="5.5"/>
-          <rect x="233" y="56" width="5.5" height="5.5"/>
-          <rect x="257.5" y="56" width="5.5" height="5.5"/>
-          <rect x="209" y="106" width="5.5" height="5.5"/>
-          <rect x="257.5" y="106" width="5.5" height="5.5"/>
-          <rect x="209" y="156.5" width="5.5" height="5.5"/>
-          <rect x="233" y="156.5" width="5.5" height="5.5"/>
-          <rect x="257.5" y="156.5" width="5.5" height="5.5"/>
+          <rect class="mark" x="40" y="28" width="11" height="11"/>
+          <rect class="mark" x="99.5" y="28" width="11" height="11" style="animation-delay:.08s"/>
+          <rect class="mark" x="159" y="28" width="11" height="11" style="animation-delay:.16s"/>
+          <rect class="mark" x="40" y="102.5" width="11" height="11" style="animation-delay:.24s"/>
+          <rect class="mark" x="159" y="102.5" width="11" height="11" style="animation-delay:.32s"/>
+          <rect class="mark" x="40" y="177" width="11" height="11" style="animation-delay:.4s"/>
+          <rect class="mark" x="99.5" y="177" width="11" height="11" style="animation-delay:.48s"/>
+          <rect class="mark" x="159" y="177" width="11" height="11" style="animation-delay:.56s"/>
         </g>
-        <rect x="222" y="78" width="28" height="44" fill="none"
-              stroke="#2b261d" stroke-width="0.9"/>
-        <g class="appear" stroke="#5a5342" fill="none" stroke-width="1"
-           stroke-linecap="round" opacity="0">
-          <circle cx="236" cy="100" r="3.2"/>
-          <ellipse cx="236.0" cy="91.2" rx="2.1" ry="5.6" transform="rotate(0 236.0 91.2)"/>
-          <ellipse cx="241.2" cy="92.9" rx="2.1" ry="5.6" transform="rotate(36 241.2 92.9)"/>
-          <ellipse cx="244.4" cy="97.3" rx="2.1" ry="5.6" transform="rotate(72 244.4 97.3)"/>
-          <ellipse cx="244.4" cy="102.7" rx="2.1" ry="5.6" transform="rotate(108 244.4 102.7)"/>
-          <ellipse cx="241.2" cy="107.1" rx="2.1" ry="5.6" transform="rotate(144 241.2 107.1)"/>
-          <ellipse cx="236.0" cy="108.8" rx="2.1" ry="5.6" transform="rotate(180 236.0 108.8)"/>
-          <ellipse cx="230.8" cy="107.1" rx="2.1" ry="5.6" transform="rotate(216 230.8 107.1)"/>
-          <ellipse cx="227.6" cy="102.7" rx="2.1" ry="5.6" transform="rotate(252 227.6 102.7)"/>
-          <ellipse cx="227.6" cy="97.3" rx="2.1" ry="5.6" transform="rotate(288 227.6 97.3)"/>
-          <ellipse cx="230.8" cy="92.9" rx="2.1" ry="5.6" transform="rotate(324 230.8 92.9)"/>
-          <path d="M236 109 C 235.5 113, 237 116, 236 119"/>
+        <rect x="73" y="52" width="64" height="97" fill="none"
+              stroke="#2b261d" stroke-width="1.2"/>
+          <g class="appear" stroke="#5a5342" fill="none" stroke-width="1.6"
+             stroke-linecap="round" opacity="0">
+            <circle cx="105" cy="100" r="7"/>
+            <ellipse cx="105.0" cy="81.0" rx="4.5" ry="12" transform="rotate(0 105.0 81.0)"/>
+            <ellipse cx="116.2" cy="84.6" rx="4.5" ry="12" transform="rotate(36 116.2 84.6)"/>
+            <ellipse cx="123.1" cy="94.1" rx="4.5" ry="12" transform="rotate(72 123.1 94.1)"/>
+            <ellipse cx="123.1" cy="105.9" rx="4.5" ry="12" transform="rotate(108 123.1 105.9)"/>
+            <ellipse cx="116.2" cy="115.4" rx="4.5" ry="12" transform="rotate(144 116.2 115.4)"/>
+            <ellipse cx="105.0" cy="119.0" rx="4.5" ry="12" transform="rotate(180 105.0 119.0)"/>
+            <ellipse cx="93.8" cy="115.4" rx="4.5" ry="12" transform="rotate(216 93.8 115.4)"/>
+            <ellipse cx="86.9" cy="105.9" rx="4.5" ry="12" transform="rotate(252 86.9 105.9)"/>
+            <ellipse cx="86.9" cy="94.1" rx="4.5" ry="12" transform="rotate(288 86.9 94.1)"/>
+            <ellipse cx="93.8" cy="84.6" rx="4.5" ry="12" transform="rotate(324 93.8 84.6)"/>
+            <path d="M105 119 C 104 130, 107 136, 105 144"/>
+          </g>
+          <rect x="89" y="42" width="90" height="138" fill="#2b261d" opacity="0.04"/>
         </g>
+        <rect x="89" y="42" width="90" height="138" rx="4" fill="none"
+              stroke="#4a443a" stroke-width="1"/>
+        <circle cx="134" cy="37.5" r="1.6" fill="#4a443a"/>
       </g>
     </svg>
     <div class="hero" style="flex-direction:column;align-items:center;gap:18px">

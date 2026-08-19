@@ -358,7 +358,7 @@ body.tracing .notTracing { display: none; }
 #howAnim { display: block; margin: 6px auto 2px; width: min(78vw, 300px); }
 #howAnim .mark { animation: markPulse 5.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
 #howAnim .appear { opacity: 0; animation: artAppear 5.6s ease-in-out infinite; }
-#howAnim .stroke { stroke-dasharray: 150; stroke-dashoffset: 150;
+#howAnim .stroke { stroke-dasharray: 42; stroke-dashoffset: 42;
   animation: strokeDraw 5.6s ease-in-out infinite; }
 #howAnim .pencil { opacity: 0; animation: pencilMove 5.6s ease-in-out infinite; }
 #howAnim .phone { animation: phoneDrift 5.6s ease-in-out infinite; }
@@ -370,14 +370,15 @@ body.tracing .notTracing { display: none; }
   0%, 20% { opacity: 0; } 32%, 92% { opacity: 1; } 100% { opacity: 0; }
 }
 @keyframes strokeDraw {
-  0%, 38% { stroke-dashoffset: 150; } 78%, 92% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: 150; }
+  0%, 38% { stroke-dashoffset: 42; } 78%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 42; }
 }
 @keyframes pencilMove {
   0%, 34% { opacity: 0; transform: translate(0, 0); }
   40% { opacity: 1; }
-  78% { opacity: 1; transform: translate(72px, 26px); }
-  88%, 100% { opacity: 0; transform: translate(72px, 26px); }
+  58% { transform: translate(-12px, 5px); }
+  78% { opacity: 1; transform: translate(0, 9px); }
+  88%, 100% { opacity: 0; transform: translate(0, 9px); }
 }
 @keyframes phoneDrift {
   0% { transform: translate(-8px, 4px) rotate(-2deg); }
