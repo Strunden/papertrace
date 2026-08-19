@@ -14,6 +14,7 @@
 
 const STYLE_PRESETS = [
   { id: 'artist',   name: 'Artist sketch', hint: 'A neural model trained on artist line drawings draws your picture. Downloads ~28 MB once, then works offline.' },
+  { id: 'painting', name: 'Painting',    hint: 'A watercolour-style painting of your photo (AnimeGANv2, Hayao style) - a colour guide for painting what you traced. Downloads ~8 MB once.' },
   { id: 'ghost',    name: 'Ghost',       hint: 'The photo itself, faded. Best for shading reference.' },
   { id: 'original', name: 'Original',    hint: 'Untouched, for artwork that is already line art.' },
 ];
@@ -84,7 +85,7 @@ function smoothstep(a, b, x) {
 /**
  * @param {ImageData} imageData source pixels (already scaled down)
  * @param {object} o {preset, threshold, thickness, invert, colour, knockWhite,
- *                    artistMap} - threshold/thickness are 0..1
+ *                    artistMap, paintMap} - threshold/thickness are 0..1
  * @returns {ImageData} straight-alpha RGBA
  */
 function applyStyle(imageData, o) {
@@ -120,6 +121,25 @@ function applyStyle(imageData, o) {
         // Keep the model's soft pencil greys; threshold trims faint marks.
         const lo = 0.06 + threshold * 0.3;
         for (let i = 0; i < n; i++) alpha[i] = smoothstep(lo, lo + 0.3, ink[i]);
+      }
+      break;
+    }
+    case 'painting': {
+      // o.paintMap is the painted rendering from app.js; this case shows it
+      // like ghost/original show the photo - a colour reference, not lines.
+      if (o.paintMap) {
+        const r = resampleMap({ data: o.paintMap.chans[0], w: o.paintMap.w, h: o.paintMap.h }, w, h);
+        const g = resampleMap({ data: o.paintMap.chans[1], w: o.paintMap.w, h: o.paintMap.h }, w, h);
+        const b = resampleMap({ data: o.paintMap.chans[2], w: o.paintMap.w, h: o.paintMap.h }, w, h);
+        rgb = new Uint8ClampedArray(n * 3);
+        for (let i = 0; i < n; i++) {
+          rgb[i * 3] = r[i]; rgb[i * 3 + 1] = g[i]; rgb[i * 3 + 2] = b[i];
+          const luma = (0.2126 * r[i] + 0.7152 * g[i] + 0.0722 * b[i]) / 255;
+          alpha[i] = o.knockWhite === false ? 1
+            : Math.min(1, Math.max(0, (1 - luma) * 1.25 + (threshold - 0.5) * 0.6));
+        }
+      } else {
+        rgb = new Uint8ClampedArray(n * 3);   // transparent placeholder
       }
       break;
     }
