@@ -4,7 +4,7 @@
   --line: rgba(255, 255, 255, 0.13);
   --text: #f2f4f8;
   --dim: #9aa3b2;
-  --accent: #6cc8ff;
+  --accent: #e9a94c;
   --good: #57d9a3;
   --warn: #ffc857;
   --bad: #ff7a7a;
@@ -63,7 +63,7 @@ html, body {
   color: var(--text); font-size: 17px; cursor: pointer;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.iconbtn.on { background: var(--accent); color: #04121c; border-color: transparent; }
+.iconbtn.on { background: var(--accent); color: #221503; border-color: transparent; }
 .iconbtn:disabled { opacity: .35; }
 
 /* -------------------------------------------------------------- sheet */
@@ -78,7 +78,7 @@ html, body {
   font-size: 12.5px; font-weight: 500; cursor: pointer;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.tab.on { background: var(--accent); color: #04121c; border-color: transparent; }
+.tab.on { background: var(--accent); color: #221503; border-color: transparent; }
 
 #sheet {
   position: fixed; z-index: 7; left: 0; right: 0; bottom: 0;
@@ -113,7 +113,7 @@ details .note:last-child { margin-bottom: 0; }
   padding: 8px 13px; border-radius: 11px; font-size: 13px; cursor: pointer;
   background: rgba(255,255,255,.07); border: 1px solid var(--line); color: var(--text);
 }
-.chip.on { background: var(--accent); color: #04121c; border-color: transparent; font-weight: 600; }
+.chip.on { background: var(--accent); color: #221503; border-color: transparent; font-weight: 600; }
 .chip.sw { width: 34px; height: 34px; padding: 0; border-radius: 10px; }
 
 .row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
@@ -136,7 +136,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   padding: 10px 15px; border-radius: 12px; font-size: 13.5px; cursor: pointer;
   background: rgba(255,255,255,.09); border: 1px solid var(--line); color: var(--text);
 }
-.btn.primary { background: var(--accent); color: #04121c; border-color: transparent; font-weight: 600; }
+.btn.primary { background: var(--accent); color: #221503; border-color: transparent; font-weight: 600; }
 .btn.wide { display: block; width: 100%; text-align: center; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
@@ -182,7 +182,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 }
 .screen.on { display: block; }
 .screen .inner { max-width: 620px; margin: 0 auto; }
-.screen h1 { font-size: 27px; margin: 0 0 6px; letter-spacing: -.02em; }
+.screen h1 { font-size: 34px; margin: 0 0 8px; letter-spacing: -.01em;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif; }
+.printbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
+  gap: 10px; flex-wrap: wrap; background: #fff; padding: 10px 0; margin-bottom: 8px; }
 .screen h2 { font-size: 15px; margin: 26px 0 8px; }
 .screen p, .screen li { color: #c8cfdb; font-size: 14.5px; }
 .screen li { margin-bottom: 6px; }
@@ -233,4 +236,64 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   #printsheet { position: static; display: block !important; padding: 0; }
   #printsheet .noprint { display: none !important; }
   .tagcell { break-inside: avoid; }
+}
+
+/* ------------------------------------------------- the paper opening */
+/* The start screen is a sheet of warm paper: a rose draws itself in ink,
+   the wordmark settles, one ink button. Tapping Start lifts the sheet away
+   to reveal the live camera - like lifting paper off the desk. Choreography
+   follows the fluid-interface rules: no overshoot, ~0.7s eased reveals,
+   short stagger, everything skippable under prefers-reduced-motion. */
+#start {
+  background:
+    radial-gradient(140% 90% at 50% -10%, #faf6ec 0%, #f2ebdb 55%, #e9e0cc 100%);
+  color: #26221b;
+  text-align: center;
+  transition: transform .5s cubic-bezier(.4, 0, .2, 1), opacity .5s cubic-bezier(.4, 0, .2, 1);
+}
+#start::before {         /* paper grain - subtle, or it reads as dirt */
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .42 0 0 0 0 .36 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#start.leaving { transform: translateY(-7%); opacity: 0; pointer-events: none; }
+.startInner { max-width: 430px; margin: 0 auto; padding-top: max(4vh, 16px); position: relative; }
+#heroArt { height: min(38vh, 300px); display: flex; align-items: center; justify-content: center; }
+#heroArt svg { height: 100%; width: auto; max-width: 82vw; }
+#heroArt path { stroke: #2b261d; fill: none; }
+#start h1 {
+  font-family: "Iowan Old Style", "Palatino Nova", Palatino, Georgia, serif;
+  font-size: clamp(40px, 11vw, 54px); letter-spacing: -.02em; line-height: 1.05;
+  margin: 6px 0 10px; color: #26221b; font-weight: 600;
+}
+#start .lead { font-size: 17px; line-height: 1.5; color: #6f695c; margin: 0 0 30px; }
+.startActions { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.btn.ink {
+  background: #26221b; color: #f6f1e4; border: none; border-radius: 999px;
+  font-size: 17px; font-weight: 600; padding: 16px 0; width: min(320px, 78vw);
+  box-shadow: 0 6px 24px rgba(38, 34, 27, .22);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn.ink:active { transform: scale(.97); box-shadow: 0 3px 12px rgba(38, 34, 27, .22); }
+.quiet { color: #6f695c; font-size: 15px; text-decoration: underline;
+  text-underline-offset: 3px; }
+.startFoot { margin-top: 34px; font-size: 13px; color: #a29a88; line-height: 2; }
+.privacyline { font-size: 12px; color: #b3ab99; }
+#start .linklike { background: none; border: none; padding: 0; color: #a29a88;
+  font-size: inherit; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px; }
+
+.reveal { opacity: 0; animation: rise .7s cubic-bezier(.2, .7, .2, 1) forwards; }
+.r1 { animation-delay: .05s; }
+.r2 { animation-delay: .85s; }
+.r3 { animation-delay: 1.05s; }
+.r4 { animation-delay: 1.3s; }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); }
+                  to { opacity: 1; transform: none; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { animation: fadeonly .2s ease forwards; }
+  @keyframes fadeonly { to { opacity: 1; } }
+  #heroArt path { animation: none !important; stroke-dashoffset: 0 !important; }
+  #start.leaving { transform: none; }
 }

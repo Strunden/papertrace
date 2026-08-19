@@ -14,7 +14,7 @@
   --line: rgba(255, 255, 255, 0.13);
   --text: #f2f4f8;
   --dim: #9aa3b2;
-  --accent: #6cc8ff;
+  --accent: #e9a94c;
   --good: #57d9a3;
   --warn: #ffc857;
   --bad: #ff7a7a;
@@ -73,7 +73,7 @@ html, body {
   color: var(--text); font-size: 17px; cursor: pointer;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.iconbtn.on { background: var(--accent); color: #04121c; border-color: transparent; }
+.iconbtn.on { background: var(--accent); color: #221503; border-color: transparent; }
 .iconbtn:disabled { opacity: .35; }
 
 /* -------------------------------------------------------------- sheet */
@@ -88,7 +88,7 @@ html, body {
   font-size: 12.5px; font-weight: 500; cursor: pointer;
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.tab.on { background: var(--accent); color: #04121c; border-color: transparent; }
+.tab.on { background: var(--accent); color: #221503; border-color: transparent; }
 
 #sheet {
   position: fixed; z-index: 7; left: 0; right: 0; bottom: 0;
@@ -123,7 +123,7 @@ details .note:last-child { margin-bottom: 0; }
   padding: 8px 13px; border-radius: 11px; font-size: 13px; cursor: pointer;
   background: rgba(255,255,255,.07); border: 1px solid var(--line); color: var(--text);
 }
-.chip.on { background: var(--accent); color: #04121c; border-color: transparent; font-weight: 600; }
+.chip.on { background: var(--accent); color: #221503; border-color: transparent; font-weight: 600; }
 .chip.sw { width: 34px; height: 34px; padding: 0; border-radius: 10px; }
 
 .row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
@@ -146,7 +146,7 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   padding: 10px 15px; border-radius: 12px; font-size: 13.5px; cursor: pointer;
   background: rgba(255,255,255,.09); border: 1px solid var(--line); color: var(--text);
 }
-.btn.primary { background: var(--accent); color: #04121c; border-color: transparent; font-weight: 600; }
+.btn.primary { background: var(--accent); color: #221503; border-color: transparent; font-weight: 600; }
 .btn.wide { display: block; width: 100%; text-align: center; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 
@@ -192,7 +192,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 }
 .screen.on { display: block; }
 .screen .inner { max-width: 620px; margin: 0 auto; }
-.screen h1 { font-size: 27px; margin: 0 0 6px; letter-spacing: -.02em; }
+.screen h1 { font-size: 34px; margin: 0 0 8px; letter-spacing: -.01em;
+  font-family: "Iowan Old Style", Palatino, Georgia, serif; }
+.printbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center;
+  gap: 10px; flex-wrap: wrap; background: #fff; padding: 10px 0; margin-bottom: 8px; }
 .screen h2 { font-size: 15px; margin: 26px 0 8px; }
 .screen p, .screen li { color: #c8cfdb; font-size: 14.5px; }
 .screen li { margin-bottom: 6px; }
@@ -243,6 +246,66 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
   #printsheet { position: static; display: block !important; padding: 0; }
   #printsheet .noprint { display: none !important; }
   .tagcell { break-inside: avoid; }
+}
+
+/* ------------------------------------------------- the paper opening */
+/* The start screen is a sheet of warm paper: a rose draws itself in ink,
+   the wordmark settles, one ink button. Tapping Start lifts the sheet away
+   to reveal the live camera - like lifting paper off the desk. Choreography
+   follows the fluid-interface rules: no overshoot, ~0.7s eased reveals,
+   short stagger, everything skippable under prefers-reduced-motion. */
+#start {
+  background:
+    radial-gradient(140% 90% at 50% -10%, #faf6ec 0%, #f2ebdb 55%, #e9e0cc 100%);
+  color: #26221b;
+  text-align: center;
+  transition: transform .5s cubic-bezier(.4, 0, .2, 1), opacity .5s cubic-bezier(.4, 0, .2, 1);
+}
+#start::before {         /* paper grain - subtle, or it reads as dirt */
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .42 0 0 0 0 .36 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+#start.leaving { transform: translateY(-7%); opacity: 0; pointer-events: none; }
+.startInner { max-width: 430px; margin: 0 auto; padding-top: max(4vh, 16px); position: relative; }
+#heroArt { height: min(38vh, 300px); display: flex; align-items: center; justify-content: center; }
+#heroArt svg { height: 100%; width: auto; max-width: 82vw; }
+#heroArt path { stroke: #2b261d; fill: none; }
+#start h1 {
+  font-family: "Iowan Old Style", "Palatino Nova", Palatino, Georgia, serif;
+  font-size: clamp(40px, 11vw, 54px); letter-spacing: -.02em; line-height: 1.05;
+  margin: 6px 0 10px; color: #26221b; font-weight: 600;
+}
+#start .lead { font-size: 17px; line-height: 1.5; color: #6f695c; margin: 0 0 30px; }
+.startActions { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.btn.ink {
+  background: #26221b; color: #f6f1e4; border: none; border-radius: 999px;
+  font-size: 17px; font-weight: 600; padding: 16px 0; width: min(320px, 78vw);
+  box-shadow: 0 6px 24px rgba(38, 34, 27, .22);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn.ink:active { transform: scale(.97); box-shadow: 0 3px 12px rgba(38, 34, 27, .22); }
+.quiet { color: #6f695c; font-size: 15px; text-decoration: underline;
+  text-underline-offset: 3px; }
+.startFoot { margin-top: 34px; font-size: 13px; color: #a29a88; line-height: 2; }
+.privacyline { font-size: 12px; color: #b3ab99; }
+#start .linklike { background: none; border: none; padding: 0; color: #a29a88;
+  font-size: inherit; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px; }
+
+.reveal { opacity: 0; animation: rise .7s cubic-bezier(.2, .7, .2, 1) forwards; }
+.r1 { animation-delay: .05s; }
+.r2 { animation-delay: .85s; }
+.r3 { animation-delay: 1.05s; }
+.r4 { animation-delay: 1.3s; }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); }
+                  to { opacity: 1; transform: none; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { animation: fadeonly .2s ease forwards; }
+  @keyframes fadeonly { to { opacity: 1; } }
+  #heroArt path { animation: none !important; stroke-dashoffset: 0 !important; }
+  #start.leaving { transform: none; }
 }
 </style>
 </head>
@@ -347,34 +410,29 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 
 <!-- ====================================================== start screen -->
 <div class="screen on" id="start">
-  <div class="inner">
-    <h1>PaperTrace AR</h1>
-    <p class="lead">Hold your phone over your paper and see your picture lying on the page,
-      ready to trace.</p>
+  <div class="inner startInner">
+    <div id="heroArt" class="reveal r1" aria-hidden="true"></div>
+    <h1 class="reveal r2">PaperTrace</h1>
+    <p class="lead reveal r3">Your photo, on the paper in front of you.<br>
+      Trace it with a real pencil.</p>
 
-    <div id="insecure" style="display:none;background:#3a2020;border:1px solid #6b3535;
-         border-radius:12px;padding:14px;margin-bottom:18px">
+    <div id="insecure" style="display:none;background:#f6dcdc;border:1px solid #d89a9a;
+         color:#5a2323;border-radius:12px;padding:14px;margin:0 0 18px;text-align:left">
       <b>The camera cannot start here.</b>
-      <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. Opening this
-      file straight from disk works in desktop Chrome but not on iPhone. See
-      <b>Getting it onto your phone</b> in Help for the one-minute fix.</p>
+      <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. See
+      <b>how it works</b> for the one-minute fix.</p>
     </div>
 
-    <div class="hero">
-      <button class="btn primary" id="btnStart">Start camera</button>
+    <div class="startActions reveal r4">
+      <button class="btn ink" id="btnStart">Start camera</button>
+      <a class="quiet" id="pdfCanvas" href="papertrace-canvas-A4.pdf" target="_blank"
+         rel="noopener">Print the canvas &darr;</a>
     </div>
 
-    <ol>
-      <li>Point your phone at a few printed tags (see below if you need some).</li>
-      <li>Pick an image - it appears locked to the page, in perspective.</li>
-      <li>Choose a trace style and draw.</li>
-    </ol>
-
-    <p class="note">Need tags first? <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Ready-to-draw canvas (A4)</a>
-      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">(Letter)</a>
-      · <button class="btn" id="btnTags" style="padding:2px 9px;font-size:12.5px">cut-out tag sheet</button>
-      · <button class="btn" id="btnHelp" style="padding:2px 9px;font-size:12.5px">how it works</button></p>
-    <p class="note">Nothing leaves your device - no account, no upload, no network request.</p>
+    <p class="startFoot reveal r4">
+      <button class="linklike" id="btnTags">cut-out tags</button>
+      &nbsp;·&nbsp; <button class="linklike" id="btnHelp">how it works</button><br>
+      <span class="privacyline">Nothing leaves your device.</span></p>
   </div>
 </div>
 
@@ -479,10 +537,9 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
 <div class="screen" id="printsheet">
   <div class="inner">
     <div class="noprint">
-      <h1>Tracking tags</h1>
-      <p class="lead">Print at 100% scale, cut along the outside of the white border, and stick
-        3-6 of them around your drawing area. Keep the white border - the tracker needs it.</p>
-      <div class="hero">
+      <div class="printbar">
+        <button class="btn" data-close>&larr; Back</button>
+        <button class="btn primary" id="btnPrint">Print</button>
         <label>Tag size&nbsp;
           <select id="tagSize" style="padding:8px;border-radius:8px">
             <option value="20">20 mm - sketchbook</option>
@@ -490,9 +547,10 @@ input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none;
             <option value="45">45 mm - easel</option>
           </select>
         </label>
-        <button class="btn primary" id="btnPrint">Print</button>
-        <button class="btn" data-close>Back</button>
       </div>
+      <h1>Tracking tags</h1>
+      <p class="lead">Print at 100% scale, cut along the outside of the white border, and stick
+        3-6 of them around your drawing area. Keep the white border - the tracker needs it.</p>
       <p class="note" style="color:#555">Every tag carries a different number. Mixing sizes is
         fine - just never put two copies of the same number in view at once.</p>
       <p class="note" style="color:#555">Don't want to cut these out? Download a ready-to-draw
@@ -3467,8 +3525,26 @@ document.querySelectorAll('.tab').forEach((t) =>
   t.addEventListener('click', () => selectTab(t.dataset.tab)));
 
 /* screens */
+// The opening: the rose from the library draws itself in ink, one stroke at
+// a time. stroke-dasharray the length of each path, offset fully, then let a
+// staggered animation pull each offset to zero - the invisible pencil.
+function buildHeroArt() {
+  const host = $('heroArt');
+  if (!host || !FLOWERS || !FLOWERS.rose) return;
+  host.innerHTML = FLOWERS.rose.svg;
+  const paths = host.querySelectorAll('path');
+  paths.forEach((path, i) => {
+    let len = 800;
+    try { len = path.getTotalLength(); } catch (e) { /* non-rendered fallback */ }
+    path.style.strokeDasharray = String(len);
+    path.style.strokeDashoffset = String(len);
+    path.style.animation = `draw 1.3s ${(0.15 + i * 0.045).toFixed(2)}s cubic-bezier(.35,.1,.25,1) forwards`;
+  });
+}
+
 function showScreen(id) {
   hideScreens();
+  $('start').classList.remove('leaving');   // e.g. camera failed mid-lift
   $(id).classList.add('on');
 }
 function hideScreens() {
@@ -3535,7 +3611,11 @@ function snapshot() {
 
 /* ------------------------------------------------------------------ wire */
 function wire() {
-  $('btnStart').addEventListener('click', startCamera);
+  $('btnStart').addEventListener('click', () => {
+    // Lift the paper sheet away while the camera starts underneath.
+    $('start').classList.add('leaving');
+    startCamera();
+  });
   $('btnHelp').addEventListener('click', () => showScreen('help'));
   $('btnHelp2').addEventListener('click', () => showScreen('help'));
   document.querySelectorAll('[data-close]').forEach((b) =>
@@ -3639,9 +3719,21 @@ function wire() {
   window.addEventListener('resize', () => { if (cropSrc) { clampCropPan(); renderCrop(); } });
 
   $('btnTags').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
+  buildHeroArt();
+  if (/^(en-(US|CA|PH)|es-MX)/.test(navigator.language)) {
+    $('pdfCanvas').href = 'papertrace-canvas-Letter.pdf';
+  }
   $('btnTags2').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
   $('tagSize').addEventListener('change', buildPrintSheet);
-  $('btnPrint').addEventListener('click', () => window.print());
+  $('btnPrint').addEventListener('click', () => {
+    // iOS home-screen apps silently ignore window.print() - the button
+    // "did nothing" and the screen felt stuck. Steer to the PDF instead.
+    if (navigator.standalone) {
+      toast('Printing is not available from the home-screen app - open the canvas PDF instead (link below)', 4500);
+      return;
+    }
+    window.print();
+  });
   $('btnDebugLog').addEventListener('click', saveDebugLog);
 }
 

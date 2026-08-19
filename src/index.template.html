@@ -111,34 +111,29 @@
 
 <!-- ====================================================== start screen -->
 <div class="screen on" id="start">
-  <div class="inner">
-    <h1>PaperTrace AR</h1>
-    <p class="lead">Hold your phone over your paper and see your picture lying on the page,
-      ready to trace.</p>
+  <div class="inner startInner">
+    <div id="heroArt" class="reveal r1" aria-hidden="true"></div>
+    <h1 class="reveal r2">PaperTrace</h1>
+    <p class="lead reveal r3">Your photo, on the paper in front of you.<br>
+      Trace it with a real pencil.</p>
 
-    <div id="insecure" style="display:none;background:#3a2020;border:1px solid #6b3535;
-         border-radius:12px;padding:14px;margin-bottom:18px">
+    <div id="insecure" style="display:none;background:#f6dcdc;border:1px solid #d89a9a;
+         color:#5a2323;border-radius:12px;padding:14px;margin:0 0 18px;text-align:left">
       <b>The camera cannot start here.</b>
-      <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. Opening this
-      file straight from disk works in desktop Chrome but not on iPhone. See
-      <b>Getting it onto your phone</b> in Help for the one-minute fix.</p>
+      <p style="margin:6px 0 0">Browsers only allow camera access on a secure page. See
+      <b>how it works</b> for the one-minute fix.</p>
     </div>
 
-    <div class="hero">
-      <button class="btn primary" id="btnStart">Start camera</button>
+    <div class="startActions reveal r4">
+      <button class="btn ink" id="btnStart">Start camera</button>
+      <a class="quiet" id="pdfCanvas" href="papertrace-canvas-A4.pdf" target="_blank"
+         rel="noopener">Print the canvas &darr;</a>
     </div>
 
-    <ol>
-      <li>Point your phone at a few printed tags (see below if you need some).</li>
-      <li>Pick an image - it appears locked to the page, in perspective.</li>
-      <li>Choose a trace style and draw.</li>
-    </ol>
-
-    <p class="note">Need tags first? <a href="https://strunden.github.io/papertrace/papertrace-canvas-A4.pdf" target="_blank" rel="noopener">Ready-to-draw canvas (A4)</a>
-      · <a href="https://strunden.github.io/papertrace/papertrace-canvas-Letter.pdf" target="_blank" rel="noopener">(Letter)</a>
-      · <button class="btn" id="btnTags" style="padding:2px 9px;font-size:12.5px">cut-out tag sheet</button>
-      · <button class="btn" id="btnHelp" style="padding:2px 9px;font-size:12.5px">how it works</button></p>
-    <p class="note">Nothing leaves your device - no account, no upload, no network request.</p>
+    <p class="startFoot reveal r4">
+      <button class="linklike" id="btnTags">cut-out tags</button>
+      &nbsp;·&nbsp; <button class="linklike" id="btnHelp">how it works</button><br>
+      <span class="privacyline">Nothing leaves your device.</span></p>
   </div>
 </div>
 
@@ -243,10 +238,9 @@
 <div class="screen" id="printsheet">
   <div class="inner">
     <div class="noprint">
-      <h1>Tracking tags</h1>
-      <p class="lead">Print at 100% scale, cut along the outside of the white border, and stick
-        3-6 of them around your drawing area. Keep the white border - the tracker needs it.</p>
-      <div class="hero">
+      <div class="printbar">
+        <button class="btn" data-close>&larr; Back</button>
+        <button class="btn primary" id="btnPrint">Print</button>
         <label>Tag size&nbsp;
           <select id="tagSize" style="padding:8px;border-radius:8px">
             <option value="20">20 mm - sketchbook</option>
@@ -254,9 +248,10 @@
             <option value="45">45 mm - easel</option>
           </select>
         </label>
-        <button class="btn primary" id="btnPrint">Print</button>
-        <button class="btn" data-close>Back</button>
       </div>
+      <h1>Tracking tags</h1>
+      <p class="lead">Print at 100% scale, cut along the outside of the white border, and stick
+        3-6 of them around your drawing area. Keep the white border - the tracker needs it.</p>
       <p class="note" style="color:#555">Every tag carries a different number. Mixing sizes is
         fine - just never put two copies of the same number in view at once.</p>
       <p class="note" style="color:#555">Don't want to cut these out? Download a ready-to-draw

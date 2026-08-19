@@ -1501,8 +1501,26 @@ document.querySelectorAll('.tab').forEach((t) =>
   t.addEventListener('click', () => selectTab(t.dataset.tab)));
 
 /* screens */
+// The opening: the rose from the library draws itself in ink, one stroke at
+// a time. stroke-dasharray the length of each path, offset fully, then let a
+// staggered animation pull each offset to zero - the invisible pencil.
+function buildHeroArt() {
+  const host = $('heroArt');
+  if (!host || !FLOWERS || !FLOWERS.rose) return;
+  host.innerHTML = FLOWERS.rose.svg;
+  const paths = host.querySelectorAll('path');
+  paths.forEach((path, i) => {
+    let len = 800;
+    try { len = path.getTotalLength(); } catch (e) { /* non-rendered fallback */ }
+    path.style.strokeDasharray = String(len);
+    path.style.strokeDashoffset = String(len);
+    path.style.animation = `draw 1.3s ${(0.15 + i * 0.045).toFixed(2)}s cubic-bezier(.35,.1,.25,1) forwards`;
+  });
+}
+
 function showScreen(id) {
   hideScreens();
+  $('start').classList.remove('leaving');   // e.g. camera failed mid-lift
   $(id).classList.add('on');
 }
 function hideScreens() {
@@ -1569,7 +1587,11 @@ function snapshot() {
 
 /* ------------------------------------------------------------------ wire */
 function wire() {
-  $('btnStart').addEventListener('click', startCamera);
+  $('btnStart').addEventListener('click', () => {
+    // Lift the paper sheet away while the camera starts underneath.
+    $('start').classList.add('leaving');
+    startCamera();
+  });
   $('btnHelp').addEventListener('click', () => showScreen('help'));
   $('btnHelp2').addEventListener('click', () => showScreen('help'));
   document.querySelectorAll('[data-close]').forEach((b) =>
@@ -1673,9 +1695,21 @@ function wire() {
   window.addEventListener('resize', () => { if (cropSrc) { clampCropPan(); renderCrop(); } });
 
   $('btnTags').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
+  buildHeroArt();
+  if (/^(en-(US|CA|PH)|es-MX)/.test(navigator.language)) {
+    $('pdfCanvas').href = 'papertrace-canvas-Letter.pdf';
+  }
   $('btnTags2').addEventListener('click', () => { buildPrintSheet(); showScreen('printsheet'); });
   $('tagSize').addEventListener('change', buildPrintSheet);
-  $('btnPrint').addEventListener('click', () => window.print());
+  $('btnPrint').addEventListener('click', () => {
+    // iOS home-screen apps silently ignore window.print() - the button
+    // "did nothing" and the screen felt stuck. Steer to the PDF instead.
+    if (navigator.standalone) {
+      toast('Printing is not available from the home-screen app - open the canvas PDF instead (link below)', 4500);
+      return;
+    }
+    window.print();
+  });
   $('btnDebugLog').addEventListener('click', saveDebugLog);
 }
 
