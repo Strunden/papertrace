@@ -17,10 +17,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 PAGE = """<!doctype html><body style="margin:0"><canvas id="cv"></canvas><script type="module">
-const vision = await import('/docs/mp/vision_bundle.mjs');
-const files = await vision.FilesetResolver.forVisionTasks('/docs/mp');
+const vision = await import('/test/mp/vision_bundle.mjs');
+const files = await vision.FilesetResolver.forVisionTasks('/test/mp');
 const lm = await vision.HandLandmarker.createFromOptions(files, {
-  baseOptions: { modelAssetPath: '/docs/mp/hand_landmarker.task', delegate: 'CPU' },
+  baseOptions: { modelAssetPath: '/test/mp/hand_landmarker.task', delegate: 'CPU' },
   runningMode: 'VIDEO', numHands: 1,
   minHandDetectionConfidence: 0.3, minTrackingConfidence: 0.3 });
 
