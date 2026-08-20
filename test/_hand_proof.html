@@ -1,0 +1,61 @@
+<!doctype html><body style="margin:0"><canvas id="cv"></canvas><script type="module">
+const vision = await import('/docs/mp/vision_bundle.mjs');
+const files = await vision.FilesetResolver.forVisionTasks('/docs/mp');
+const lm = await vision.HandLandmarker.createFromOptions(files, {
+  baseOptions: { modelAssetPath: '/docs/mp/hand_landmarker.task', delegate: 'CPU' },
+  runningMode: 'VIDEO', numHands: 1,
+  minHandDetectionConfidence: 0.3, minTrackingConfidence: 0.3 });
+
+const v = document.createElement('video');
+v.src = '/test/_replay_footage.mp4'; v.muted = true;
+await new Promise(r => { v.onloadedmetadata = r; });
+const cv = document.getElementById('cv');
+cv.width = v.videoWidth / 2; cv.height = v.videoHeight / 2;
+const ctx = cv.getContext('2d');
+
+const chunks = [];
+const rec = new MediaRecorder(cv.captureStream(30),
+  { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 4_000_000 });
+rec.ondataavailable = e => chunks.push(e.data);
+rec.start(250);
+
+window.__stats = { frames: 0, hits: 0, tips: [], lat: [] };
+let ts = 0;
+function step() {
+  v.requestVideoFrameCallback(() => {
+    const t0 = performance.now();
+    const res = lm.detectForVideo(v, ts += 33.34);
+    window.__stats.lat.push(performance.now() - t0);
+    window.__stats.frames++;
+    ctx.drawImage(v, 0, 0, cv.width, cv.height);
+    if (res.landmarks && res.landmarks.length) {
+      window.__stats.hits++;
+      const pts = res.landmarks[0];
+      ctx.fillStyle = '#ffb300';
+      for (const p of pts) {
+        ctx.beginPath();
+        ctx.arc(p.x * cv.width, p.y * cv.height, 4, 0, 7); ctx.fill();
+      }
+      const tip = pts[8];
+      window.__stats.tips.push([v.currentTime, tip.x, tip.y]);
+      ctx.strokeStyle = '#00e676'; ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(tip.x * cv.width, tip.y * cv.height, 14, 0, 7); ctx.stroke();
+    } else {
+      ctx.fillStyle = '#ff1744'; ctx.font = 'bold 40px sans-serif';
+      ctx.fillText('NO HAND', 30, 60);
+    }
+    if (!v.ended) step();
+  });
+}
+v.play(); step();
+v.onended = () => {
+  rec.onstop = async () => {
+    const buf = await new Blob(chunks).arrayBuffer();
+    window.__webm = Array.from(new Uint8Array(buf));
+    window.__done = true;
+  };
+  rec.stop();
+};
+window.__ready = true;
+</script></body>
