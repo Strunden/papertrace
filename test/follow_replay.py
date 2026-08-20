@@ -54,7 +54,9 @@ def main():
                 "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
                 "--autoplay-policy=no-user-gesture-required"])
             page = b.new_page(viewport={"width": 390, "height": 844},
-                              device_scale_factor=2, has_touch=True, is_mobile=True)
+                              device_scale_factor=2, has_touch=True, is_mobile=True,
+                              record_video_dir=os.path.join(ROOT, "build", "_vid"),
+                              record_video_size={"width": 390, "height": 844})
             page.on("pageerror", lambda e: print("[pageerror]", e))
             if throttle > 1:
                 cdp = page.context.new_cdp_session(page)
@@ -134,7 +136,15 @@ def main():
                       f"{r['gate']:16s} {r['global']:6.1f} {r['frac']:.4f}  {r['pose']}")
 
             page.screenshot(path=os.path.join(ROOT, "build", "follow_replay_end.png"))
+            vid = page.video
             b.close()
+            webm = vid.path()
+            out = os.path.join(ROOT, "build", "follow_replay.mp4")
+            subprocess.run(["ffmpeg", "-y", "-i", webm, "-c:v", "libx264",
+                            "-pix_fmt", "yuv420p", "-crf", "23", out],
+                           check=True, capture_output=True)
+            os.remove(webm)
+            print("video:", out)
     finally:
         httpd.shutdown()
         if os.path.exists(footage):
