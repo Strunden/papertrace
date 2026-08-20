@@ -63,15 +63,29 @@ FAKE_CAMERA = """
     cx.fillStyle = '#4a4f57';                       // desk
     cx.fillRect(0, 0, W, H);
     // Hand-held wobble: drift, gentle rotation, slow zoom, a little shear.
-    const k = 1.0 + 0.06 * Math.sin(t * 0.7);
-    const rot = 0.10 * Math.sin(t * 0.5);
-    const shear = 0.05 * Math.sin(t * 0.37);
-    cx.setTransform(k * Math.cos(rot), k * Math.sin(rot),
-                    -k * Math.sin(rot) + shear, k * Math.cos(rot),
-                    W / 2 + 26 * Math.sin(t * 0.6), H / 2 + 18 * Math.cos(t * 0.45));
+    // window.__stillCam freezes the mount (the drawing-station scenario).
+    if (window.__stillCam) {
+      cx.setTransform(1, 0, 0, 1, W / 2, H / 2);
+    } else {
+      const k = 1.0 + 0.06 * Math.sin(t * 0.7);
+      const rot = 0.10 * Math.sin(t * 0.5);
+      const shear = 0.05 * Math.sin(t * 0.37);
+      cx.setTransform(k * Math.cos(rot), k * Math.sin(rot),
+                      -k * Math.sin(rot) + shear, k * Math.cos(rot),
+                      W / 2 + 26 * Math.sin(t * 0.6), H / 2 + 18 * Math.cos(t * 0.45));
+    }
     cx.fillStyle = '#f4f1e8';                        // the sheet
     cx.fillRect(-330, -250, 660, 500);
     for (const tag of TAGS) drawTag(tag);
+    // window.__handBlob: a dark "drawing hand" orbiting slowly on the sheet.
+    if (window.__handBlob) {
+      const bx = 90 + 55 * Math.cos(t * 2.2), by = 40 + 40 * Math.sin(t * 2.2);
+      cx.fillStyle = '#6b5842';
+      cx.beginPath();
+      cx.ellipse(bx, by, 46, 30, 0.5, 0, Math.PI * 2);
+      cx.fill();
+      window.__blobPos = { x: bx, y: by };
+    }
     window.__frames = (window.__frames || 0) + 1;
     requestAnimationFrame(frame);
   }
@@ -305,6 +319,37 @@ def run(headed=False):
 
         page.evaluate("() => restyle(false, false)")
         page.wait_for_timeout(400)
+
+        # ------------------------------------------------ follow the hand
+        # A mounted camera (still), a moving hand on the sheet: the view
+        # should ease into a closeup on the hand, and release when it stops.
+        page.evaluate("() => { window.__stillCam = true; }")
+        page.wait_for_timeout(800)
+        open_tab('place')
+        page.check("#followHand")
+        page.wait_for_timeout(300)
+        open_tab('place')            # close the sheet so the view is clean
+        page.evaluate("() => { window.__handBlob = true; }")
+        try:
+            page.wait_for_function("() => state.camZoom > 1.6", timeout=15000)
+            zoomed = True
+        except Exception:
+            zoomed = False
+        pan = page.evaluate("() => Math.hypot(state.camPanX, state.camPanY)")
+        check("follow zooms toward the moving hand", zoomed,
+              f"camZoom={page.evaluate('() => state.camZoom'):.2f}, |pan|={pan:.0f}px")
+        page.evaluate("() => { window.__handBlob = false; }")
+        try:
+            page.wait_for_function("() => state.camZoom < 1.2", timeout=15000)
+            released = True
+        except Exception:
+            released = False
+        check("follow releases when the hand stops", released,
+              f"camZoom={page.evaluate('() => state.camZoom'):.2f}")
+        open_tab('place')
+        page.uncheck("#followHand")
+        page.evaluate("() => { window.__stillCam = false; state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; clampCamPan(); updateCamTransform(); }")
+        page.wait_for_timeout(300)
 
         # --------------------------------------------- camera view gestures
         open_tab('place')
