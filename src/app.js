@@ -213,18 +213,20 @@ function dpr() { return Math.min(2, window.devicePixelRatio || 1); }
 // grayscale copy at ~10 Hz - no ML, negligible CPU. Detection reads the
 // raw frames, so the closeup never affects tracking.
 const FOLLOW = {
-  zoom: 2.2,          // closeup magnification
-  sampleMs: 100,      // sensing cadence
-  alpha: 0.2,         // EMA on the motion centroid
-  ease: 0.085,        // per-tick approach toward the target view
-  diffThresh: 20,     // per-pixel |delta| that counts as motion
-  minFrac: 0.003,     // motion area below this = noise
+  zoom: 2.6,          // closeup magnification - tight enough to matter
+  sampleMs: 100,      // sensing cadence (best effort; easing is dt-based)
+  targetTau: 0.22,    // seconds - how fast the aim point tracks the hand
+  viewTau: 0.35,      // seconds - how fast the view approaches the aim
+  senseW: 160,        // sensing resolution; fine pencil strokes must register
+  diffThresh: 14,     // per-pixel |delta| that counts as motion
+  minFrac: 0.0015,    // motion area below this = noise
   maxFrac: 0.5,       // above this = scene change, not a hand
   globalMax: 14,      // mean |delta| above this = camera itself is moving (tuned on real footage)
-  idleMs: 2600,       // no motion this long -> release the closeup
-  deadPx: 16,         // centroid must move this far to retarget
+  idleMs: 4000,       // no motion this long -> release (careful strokes pause a lot)
+  deadPx: 10,         // centroid must move this far to retarget
   suspendMs: 6000,    // manual gestures own the view this long
 };
+let followLastTick = 0;
 const followCv = document.createElement('canvas');
 // Field-debuggable: every sample records why follow did or didn't act.
 // Surfaced in the debug log and readable by the replay harness.
@@ -260,7 +262,7 @@ function followSample() {
     : 'sensing';
   if (wanted && el.video.videoWidth) {
     const vw = el.video.videoWidth, vh = el.video.videoHeight;
-    const sw = 120, sh = Math.max(2, Math.round(sw * vh / vw));
+    const sw = FOLLOW.senseW, sh = Math.max(2, Math.round(sw * vh / vw));
     if (followCv.width !== sw || followCv.height !== sh) {
       followCv.width = sw; followCv.height = sh; followPrev = null;
     }
@@ -315,8 +317,10 @@ function followSample() {
           else {
             const dx = css[0] - followTarget.x, dy = css[1] - followTarget.y;
             if (Math.hypot(dx, dy) > FOLLOW.deadPx) {
-              followTarget.x += dx * FOLLOW.alpha;
-              followTarget.y += dy * FOLLOW.alpha;
+              // dt-based tracking: immune to throttled timers on the phone.
+              const kT = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.targetTau);
+              followTarget.x += dx * kT;
+              followTarget.y += dy * kT;
             }
           }
           followLastMotion = now;
@@ -334,13 +338,14 @@ function followSample() {
     && now - followLastMotion < FOLLOW.idleMs
     && now > followSuspendedUntil;
   followDbg.engaged = followEngaged || active;
+  if (!followLastTick) followLastTick = now;
   if (state.followHand && state.running && now - (followSample.lastLog || 0) > 4000) {
     followSample.lastLog = now;
     dlog(`follow ${followDbg.gate} g=${followDbg.global.toFixed(0)}`
       + ` f=${followDbg.frac.toFixed(3)} z=${state.camZoom.toFixed(2)}`
       + `${state.mirrored ? ' mirrored' : ''}`);
   }
-  if (!active && !followEngaged) return;
+  if (!active && !followEngaged) { followLastTick = now; return; }
   const cw = window.innerWidth, ch = window.innerHeight;
   let goalZoom = 1, goalPanX = 0, goalPanY = 0;
   if (active) {
@@ -350,9 +355,13 @@ function followSample() {
     goalPanY = (ch / 2 - followTarget.y) * goalZoom;
     followEngaged = true;
   }
-  state.camZoom += (goalZoom - state.camZoom) * FOLLOW.ease;
-  state.camPanX += (goalPanX - state.camPanX) * FOLLOW.ease;
-  state.camPanY += (goalPanY - state.camPanY) * FOLLOW.ease;
+  // Time-based approach: a stretched tick moves proportionally further, so
+  // the feel is identical whether the timer fires at 100 ms or 400 ms.
+  const kV = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.viewTau);
+  followLastTick = now;
+  state.camZoom += (goalZoom - state.camZoom) * kV;
+  state.camPanX += (goalPanX - state.camPanX) * kV;
+  state.camPanY += (goalPanY - state.camPanY) * kV;
   clampCamPan();
   updateCamTransform();
   $('camZoom').value = String(Math.round(state.camZoom * 100));
