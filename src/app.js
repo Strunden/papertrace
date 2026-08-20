@@ -230,7 +230,7 @@ let followLastTick = 0;
 const followCv = document.createElement('canvas');
 // Field-debuggable: every sample records why follow did or didn't act.
 // Surfaced in the debug log and readable by the replay harness.
-const followDbg = { gate: 'off', global: 0, frac: 0, noise: 0, targets: 0, engaged: false };
+const followDbg = { gate: 'off', global: 0, frac: 0, noise: 0, targets: 0, engaged: false, dt: 0 };
 let followPrev = null;
 let followTarget = null;        // css-at-zoom-1 point being centred
 let followLastMotion = 0;
@@ -358,6 +358,7 @@ function followSample() {
   // Time-based approach: a stretched tick moves proportionally further, so
   // the feel is identical whether the timer fires at 100 ms or 400 ms.
   const kV = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.viewTau);
+  followDbg.dt = now - followLastTick;   // real cadence, throttling visible
   followLastTick = now;
   state.camZoom += (goalZoom - state.camZoom) * kV;
   state.camPanX += (goalPanX - state.camPanX) * kV;

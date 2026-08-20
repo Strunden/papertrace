@@ -158,6 +158,12 @@ def run(headed=False):
         page.on("console", lambda m: errors.append("console.error: " + m.text)
                 if m.type == "error" else None)
 
+        throttle = float(os.environ.get("PT_THROTTLE", "0") or 0)
+        if throttle > 1:
+            cdp = page.context.new_cdp_session(page)
+            cdp.send("Emulation.setCPUThrottlingRate", {"rate": throttle})
+            print(f"[env] CPU throttled {throttle}x (phone-like); timeouts stretched")
+            page.set_default_timeout(30000 * throttle)
         page.add_init_script(f"({FAKE_CAMERA})({json.dumps(DICT)})")
         page.goto(f"http://127.0.0.1:{port}/index.html")
         page.wait_for_timeout(600)

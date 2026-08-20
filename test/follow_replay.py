@@ -7,7 +7,10 @@ journey reaches Trace), the journey runs the real screens (daisy -> crop ->
 Original style, instant -> print step -> AR), then follow is enabled and
 sampled 4x/second for the footage duration.
 
-Usage: .venv/bin/python test/follow_replay.py path/to/footage.mov [seconds]
+Usage: .venv/bin/python test/follow_replay.py path/to/footage.mov [seconds] [throttle]
+
+`throttle` multiplies CPU slowness via the devtools protocol (6 ~= a
+mid-range phone under load). Default 1 (no throttle).
 """
 import http.server, os, socket, subprocess, sys, threading
 from playwright.sync_api import sync_playwright
@@ -34,6 +37,7 @@ def main():
         print(__doc__); sys.exit(1)
     src = os.path.abspath(sys.argv[1])
     seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 18
+    throttle = float(sys.argv[3]) if len(sys.argv) > 3 else 1
     footage = os.path.join(HERE, "_replay_footage.mp4")
     print("transcoding to H.264...")
     transcode(src, footage)
@@ -52,6 +56,10 @@ def main():
             page = b.new_page(viewport={"width": 390, "height": 844},
                               device_scale_factor=2, has_touch=True, is_mobile=True)
             page.on("pageerror", lambda e: print("[pageerror]", e))
+            if throttle > 1:
+                cdp = page.context.new_cdp_session(page)
+                cdp.send("Emulation.setCPUThrottlingRate", {"rate": throttle})
+                print(f"CPU throttled {throttle}x (phone-like)")
             page.goto(f"http://127.0.0.1:{port}/docs/index.html")
 
             page.evaluate(
@@ -102,6 +110,7 @@ def main():
                   global: +followDbg.global.toFixed(1),
                   frac: +followDbg.frac.toFixed(4),
                   targets: followDbg.targets,
+                  dt: +followDbg.dt.toFixed(0),
                   pose: !!state.pose,
                 }});
               }}
@@ -113,8 +122,12 @@ def main():
             for r in samples:
                 gates[r["gate"]] = gates.get(r["gate"], 0) + 1
                 max_zoom = max(max_zoom, r["zoom"])
+            dts = [r["dt"] for r in samples if r.get("dt")]
             print("\ngate histogram:", dict(sorted(gates.items(), key=lambda kv: -kv[1])))
             print(f"max zoom reached: {max_zoom:.2f}, targets accepted: {samples[-1]['targets']}")
+            if dts:
+                print(f"follow tick interval: avg {sum(dts)/len(dts):.0f}ms, max {max(dts)}ms"
+                      f" (configured {100}ms)")
             print("\n t     zoom  pan   gate             global  frac    pose")
             for r in samples[::2]:
                 print(f" {r['t']:5.1f} {r['zoom']:5.2f} {r['pan']:4.0f}  "
