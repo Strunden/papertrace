@@ -361,7 +361,7 @@ body.tracing .notTracing { display: none; }
 #howAnim .stroke { stroke-dasharray: 52; stroke-dashoffset: 52;
   animation: strokeDraw 5.6s ease-in-out infinite; }
 #howAnim .pencil { opacity: 0; animation: pencilMove 5.6s ease-in-out infinite; }
-#howAnim .phone { animation: phoneDrift 5.6s ease-in-out infinite; }
+#howAnim .phone, #howAnim .winMove { animation: scanPan 5.6s ease-in-out infinite; }
 @keyframes markPulse {
   0%, 8% { opacity: .45; } 14% { opacity: 1; transform: scale(1.5); }
   20%, 100% { opacity: 1; transform: scale(1); }
@@ -380,10 +380,13 @@ body.tracing .notTracing { display: none; }
   78% { opacity: 1; transform: translate(0, 9px); }
   88%, 100% { opacity: 0; transform: translate(0, 9px); }
 }
-@keyframes phoneDrift {
-  0% { transform: translate(-8px, 4px) rotate(-2deg); }
-  16%, 88% { transform: translate(0, 0) rotate(0deg); }
-  100% { transform: translate(-8px, 4px) rotate(-2deg); }
+/* The classic AR scan loop: the phone pans over the sheet the whole time.
+   Translate only (no rotate) so chrome and window stay perfectly in sync -
+   and the world seen through the window never moves. */
+@keyframes scanPan {
+  0% { transform: translate(-14px, 4px); }
+  50% { transform: translate(8px, -3px); }
+  100% { transform: translate(-14px, 4px); }
 }
 /* captions narrate the same 5.6s loop the animation runs */
 #howCaption { position: relative; height: 2.6em; margin: 4px 0 14px;
@@ -397,7 +400,8 @@ body.tracing .notTracing { display: none; }
 @keyframes cap3 { 0%, 56% { opacity: 0; } 60%, 92% { opacity: 1; } 96%, 100% { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .pencil, #howAnim .phone {
+  #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .pencil,
+  #howAnim .phone, #howAnim .winMove {
     animation: none; opacity: 1; stroke-dashoffset: 0;
   }
   #howCaption { height: auto; }
