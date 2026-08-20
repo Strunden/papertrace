@@ -34,19 +34,25 @@ this screen must make them *get* what is about to happen, wordlessly.
   (`#howCaption`, phases: finding marks → picture appears on screen → trace on
   paper) stay, though you may restyle and re-time them.
 
-## Visual language
-Match the app's paper aesthetic: warm paper ground (`#faf6ec…#e9e0cc` radial),
-ink `#26221b`/`#2b261d`, muted ink `#5a5342`/`#6f695c`, hand fill `#f6efe0`,
-pencil gold `#c9a227`. Serif display comes from the surrounding screen; the
-graphic itself is ink-outline flat illustration. No gradients inside the SVG, no
-photorealism, no emoji.
+## Visual language — ROUND 2: the style is YOURS
+Round 1 locked the style and produced three near-identical siblings. This
+round, the visual language is the exploration. You own it. Constraints, all
+practical rather than aesthetic:
+- The graphic sits on the screen's warm paper ground (`#faf6ec…#e9e0cc`
+  radial) — it must harmonise with that ground, not fight it. Beyond that,
+  choose your own palette (a strong accent or spot colours are welcome), your
+  own line weight philosophy, your own level of abstraction.
+- Legible at 300–430 px wide. No photorealism, no emoji, no raster images.
+- The surrounding screen uses a serif display face; your in-graphic
+  typography (labels, annotations) may match it or deliberately contrast.
 
-Reference conventions to copy (researched): Google ARCore onboarding guidance —
-hand+device in motion over the surface, anchored content demonstrating
-persistence, highlight feedback on detection, instruction visuals consistent
-with the app. Study any AR-app "scan your surface" onboarding you know for
-shape quality and motion feel; the current version's weakness is **crude
-shapes** (hands especially) and **stiff motion**, not the architecture.
+Reference conventions worth copying remain: Google ARCore onboarding —
+device in motion over the surface, anchored content demonstrating
+persistence, detection feedback. But HOW that looks is your call.
+
+**A named style direction will be assigned per variant.** Commit to it hard —
+a timid version of a style reads as a mistake; a committed one reads as a
+choice.
 
 ## Technical constraints
 - Everything lives in two places: the `<svg id="howAnim" …>…</svg>` block in
