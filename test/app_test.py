@@ -86,6 +86,22 @@ FAKE_CAMERA = """
       cx.fill();
       window.__blobPos = { x: bx, y: by };
     }
+    // window.__realish: real-sensor dirt - auto-exposure flicker and noise
+    // specks. A synthetic-clean feed hides threshold bugs (it did).
+    if (window.__realish) {
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.fillStyle = (Math.sin(t * 6.3) > 0 ? '#ffffff' : '#000000');
+      cx.globalAlpha = 0.015 + 0.02 * Math.abs(Math.sin(t * 5.1));
+      cx.fillRect(0, 0, W, H);
+      cx.globalAlpha = 0.5;
+      for (let i = 0; i < 260; i++) {
+        const nx = (Math.sin(i * 127.1 + t * 91.7) * 0.5 + 0.5) * W;
+        const ny = (Math.sin(i * 311.7 + t * 57.3) * 0.5 + 0.5) * H;
+        cx.fillStyle = (i & 1) ? '#fff' : '#000';
+        cx.fillRect(nx, ny, 2, 2);
+      }
+      cx.globalAlpha = 1;
+    }
     window.__frames = (window.__frames || 0) + 1;
     requestAnimationFrame(frame);
   }
@@ -338,6 +354,19 @@ def run(headed=False):
         pan = page.evaluate("() => Math.hypot(state.camPanX, state.camPanY)")
         check("follow zooms toward the moving hand", zoomed,
               f"camZoom={page.evaluate('() => state.camZoom'):.2f}, |pan|={pan:.0f}px")
+        # The blob orbits right-of-centre: unmirrored, the view must pan
+        # negative-x toward it...
+        panx = page.evaluate("() => state.camPanX")
+        check("follow pans toward the hand (direction)", panx < -20, f"camPanX={panx:.0f}")
+        # ...and MIRRORED, the same hand appears on the LEFT, so pan flips
+        # sign. Regression for the mirror-mode targeting bug.
+        page.click("#btnMirror")
+        page.evaluate("() => { state.camPanX = 0; state.camPanY = 0; }")
+        page.wait_for_timeout(2500)
+        panx_m = page.evaluate("() => state.camPanX")
+        check("mirrored follow pans the flipped direction", panx_m > 20,
+              f"camPanX={panx_m:.0f} (mirrored)")
+        page.click("#btnMirror")
         page.evaluate("() => { window.__handBlob = false; }")
         try:
             page.wait_for_function("() => state.camZoom < 1.2", timeout=15000)

@@ -2480,12 +2480,15 @@ const FOLLOW = {
   diffThresh: 20,     // per-pixel |delta| that counts as motion
   minFrac: 0.003,     // motion area below this = noise
   maxFrac: 0.5,       // above this = scene change, not a hand
-  globalMax: 10,      // mean |delta| above this = camera itself is moving
+  globalMax: 14,      // mean |delta| above this = camera itself is moving (tuned on real footage)
   idleMs: 2600,       // no motion this long -> release the closeup
   deadPx: 16,         // centroid must move this far to retarget
   suspendMs: 6000,    // manual gestures own the view this long
 };
 const followCv = document.createElement('canvas');
+// Field-debuggable: every sample records why follow did or didn't act.
+// Surfaced in the debug log and readable by the replay harness.
+const followDbg = { gate: 'off', global: 0, frac: 0, noise: 0, targets: 0, engaged: false };
 let followPrev = null;
 let followTarget = null;        // css-at-zoom-1 point being centred
 let followLastMotion = 0;
@@ -2509,6 +2512,12 @@ function followSample() {
   const now = performance.now();
   const wanted = state.followHand && state.running && !state.freeze
     && state.pose && document.visibilityState === 'visible';
+  followDbg.gate = !state.followHand ? 'off'
+    : !state.running ? 'no-camera'
+    : state.freeze ? 'frozen'
+    : !state.pose ? 'no-pose'
+    : document.visibilityState !== 'visible' ? 'hidden'
+    : 'sensing';
   if (wanted && el.video.videoWidth) {
     const vw = el.video.videoWidth, vh = el.video.videoHeight;
     const sw = 120, sh = Math.max(2, Math.round(sw * vh / vw));
@@ -2539,6 +2548,8 @@ function followSample() {
       let globalSum = 0;
       for (let i = 0; i < n; i++) globalSum += Math.abs(gray[i] - followPrev[i]);
       const globalMean = globalSum / n;
+      followDbg.global = globalMean;
+      if (globalMean >= FOLLOW.globalMax) followDbg.gate = 'global-motion';
       if (globalMean < FOLLOW.globalMax && bx1 > bx0 && by1 > by0) {
         let cx = 0, cy = 0, count = 0;
         for (let y = by0; y < by1; y++) {
@@ -2550,9 +2561,16 @@ function followSample() {
           }
         }
         const frac = count / ((bx1 - bx0) * (by1 - by0));
+        followDbg.frac = frac;
+        followDbg.gate = frac <= FOLLOW.minFrac ? 'no-motion'
+          : frac >= FOLLOW.maxFrac ? 'too-much-motion' : 'target';
         if (frac > FOLLOW.minFrac && frac < FOLLOW.maxFrac) {
           const videoX = (cx / count) * (vw / sw), videoY = (cy / count) * (vw / sw);
           const css = matApply(V, videoX, videoY);
+          // Mirrored view: the element is flipped about the screen centre
+          // AFTER layout, so the on-screen x of a video point is reflected.
+          // Without this, follow zooms to the horizontally flipped spot.
+          if (state.mirrored) css[0] = window.innerWidth - css[0];
           if (!followTarget) followTarget = { x: css[0], y: css[1] };
           else {
             const dx = css[0] - followTarget.x, dy = css[1] - followTarget.y;
@@ -2562,6 +2580,7 @@ function followSample() {
             }
           }
           followLastMotion = now;
+          followDbg.targets++;
         }
       }
     }
@@ -2574,6 +2593,13 @@ function followSample() {
   const active = wanted && followTarget
     && now - followLastMotion < FOLLOW.idleMs
     && now > followSuspendedUntil;
+  followDbg.engaged = followEngaged || active;
+  if (state.followHand && state.running && now - (followSample.lastLog || 0) > 4000) {
+    followSample.lastLog = now;
+    dlog(`follow ${followDbg.gate} g=${followDbg.global.toFixed(0)}`
+      + ` f=${followDbg.frac.toFixed(3)} z=${state.camZoom.toFixed(2)}`
+      + `${state.mirrored ? ' mirrored' : ''}`);
+  }
   if (!active && !followEngaged) return;
   const cw = window.innerWidth, ch = window.innerHeight;
   let goalZoom = 1, goalPanX = 0, goalPanY = 0;
