@@ -64,26 +64,46 @@ def main():
                     warped = cv2.warpPerspective(prev_g, Hm, (W, H))
                     diff = cv2.absdiff(cur_g, warped)
                     diff[warped == 0] = 0        # ignore borders the warp exposed
-                    _, mask = cv2.threshold(diff, 22, 255, cv2.THRESH_BINARY)
-                    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-                    mask = cv2.dilate(mask, np.ones((9, 9), np.uint8))
+                    _, fine = cv2.threshold(diff, 22, 255, cv2.THRESH_BINARY)
+                    fine = cv2.morphologyEx(fine, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+                    mask = cv2.dilate(fine, np.ones((9, 9), np.uint8))
 
-        # 4. largest moving blob = the hand
+        # 4. hand blob -> PEN TIP. The arm always enters from a frame
+        # border; the pen tip is the far end of the moving blob away from
+        # every border it touches (the wrist side). New ink also appears
+        # there, which keeps the extreme point pinned to the nib.
         target = None
         if mask is not None:
             n, lab, stats, cents = cv2.connectedComponentsWithStats(mask)
-            cand = [(stats[i, cv2.CC_STAT_AREA], cents[i]) for i in range(1, n)
+            cand = [(stats[i, cv2.CC_STAT_AREA], i) for i in range(1, n)
                     if stats[i, cv2.CC_STAT_AREA] > 250]
             cand.sort(key=lambda c: -c[0])
             cand = cand[:3]
+            bi = None
             if cand:
                 if ema is None:
-                    target = cand[0][1]
+                    bi = cand[0][1]
                 else:
                     # stickiness: of the biggest blobs, take the one nearest
                     # the previous position - shadows and freshly inked
                     # strokes flicker in elsewhere, the hand doesn't teleport
-                    target = min(cand, key=lambda c: np.hypot(*(c[1] - ema)))[1]
+                    bi = min(cand, key=lambda c: np.hypot(*(cents[c[1]] - ema)))[1]
+            if bi is not None:
+                ys, xs = np.nonzero(lab == bi)
+                E = 8
+                x0b, y0b = stats[bi, cv2.CC_STAT_LEFT], stats[bi, cv2.CC_STAT_TOP]
+                x1b = x0b + stats[bi, cv2.CC_STAT_WIDTH]
+                y1b = y0b + stats[bi, cv2.CC_STAT_HEIGHT]
+                score = np.zeros(len(xs), dtype=np.float64)
+                touched = False
+                if y1b >= H - E:  score += (H - ys); touched = True   # enters from bottom
+                if x1b >= W - E:  score += (W - xs); touched = True   # from the right
+                if x0b <= E:      score += xs;       touched = True   # from the left
+                if y0b <= E:      score += ys;       touched = True   # from the top
+                if not touched:
+                    score = (H - ys).astype(np.float64)  # fallback: farthest up
+                j = int(np.argmax(score))
+                target = np.array([xs[j], ys[j]], dtype=np.float64)
         if target is not None:
             hits += 1
             recent.append(np.asarray(target))

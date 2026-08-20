@@ -342,67 +342,6 @@ def run(headed=False):
         page.evaluate("() => restyle(false, false)")
         page.wait_for_timeout(400)
 
-        # ------------------------------------------------ follow the hand
-        # A mounted camera (still), a moving hand on the sheet: the view
-        # should ease into a closeup on the hand, and release when it stops.
-        page.evaluate("() => { window.__stillCam = true; }")
-        page.wait_for_timeout(800)
-        page.click("#btnFollow")   # the prominent top-bar toggle
-        page.wait_for_timeout(300)
-        check("top-bar follow toggle engages and syncs",
-              page.evaluate("() => state.followHand")
-              and page.evaluate("() => document.getElementById('followHand').checked")
-              and page.evaluate("() => document.getElementById('btnFollow').classList.contains('on')"))
-        page.evaluate("() => { window.__handBlob = true; }")
-        try:
-            page.wait_for_function("() => state.camZoom > 1.6", timeout=15000)
-            zoomed = True
-        except Exception:
-            zoomed = False
-        pan = page.evaluate("() => Math.hypot(state.camPanX, state.camPanY)")
-        check("follow zooms toward the moving hand", zoomed,
-              f"camZoom={page.evaluate('() => state.camZoom'):.2f}, |pan|={pan:.0f}px")
-        # The blob orbits right-of-centre: unmirrored, the view must pan
-        # negative-x toward it...
-        panx = page.evaluate("() => state.camPanX")
-        check("follow pans toward the hand (direction)", panx < -20, f"camPanX={panx:.0f}")
-        # Debug marker: red square = eased focus point. While engaged it is
-        # visible and converges near screen centre (the view centres on it).
-        mark = page.evaluate("""() => {
-          const r = document.getElementById('followMark').getBoundingClientRect();
-          return { shown: r.width > 0, dx: r.x + r.width/2 - innerWidth/2,
-                   dy: r.y + r.height/2 - innerHeight/2 };
-        }""")
-        check("follow debug marker shown near the focus centre",
-              mark["shown"] and abs(mark["dx"]) < 260 and abs(mark["dy"]) < 260,
-              f"marker offset=({mark['dx']:.0f},{mark['dy']:.0f})px")
-        # ...and MIRRORED, the same hand appears on the LEFT, so pan flips
-        # sign. Regression for the mirror-mode targeting bug.
-        page.click("#btnMirror")
-        page.evaluate("() => { state.camPanX = 0; state.camPanY = 0; }")
-        page.wait_for_timeout(2500)
-        panx_m = page.evaluate("() => state.camPanX")
-        check("mirrored follow pans the flipped direction", panx_m > 20,
-              f"camPanX={panx_m:.0f} (mirrored)")
-        page.click("#btnMirror")
-        page.evaluate("() => { window.__handBlob = false; }")
-        try:
-            page.wait_for_function("() => state.camZoom < 1.2", timeout=15000)
-            released = True
-        except Exception:
-            released = False
-        check("follow releases when the hand stops", released,
-              f"camZoom={page.evaluate('() => state.camZoom'):.2f}")
-        page.click("#btnFollow")
-        check("top-bar follow toggle disengages",
-              not page.evaluate("() => state.followHand"))
-        page.wait_for_timeout(300)
-        check("follow debug marker hidden when follow is off",
-              page.evaluate("() => document.getElementById('followMark')"
-                            ".style.display === 'none'"))
-        page.evaluate("() => { window.__stillCam = false; state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; clampCamPan(); updateCamTransform(); }")
-        page.wait_for_timeout(300)
-
         # --------------------------------------------- camera view gestures
         open_tab('place')
         page.eval_on_selector("#opacity", "e => { e.value = 55; e.dispatchEvent(new Event('input')); }")

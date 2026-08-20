@@ -34,7 +34,6 @@ const state = {
   presetFrame: null,
   placed: false,
   autoStyle: false,      // photo loaded, no style picked yet -> auto Artist
-  followHand: false,     // auto-closeup on the drawing hand
   userPlaced: false,
   fitSig: '',
   aspect: 1,
@@ -206,272 +205,6 @@ function dpr() { return Math.min(2, window.devicePixelRatio || 1); }
  * dragging by dx always moves the view by dx on screen. videoToCssMatrix()
  * deliberately does NOT include any of this (see its own comment) - it's
  * display-only, detection and the AR overlay math stay untouched. */
-/* ------------------------------------------------- follow the hand */
-// Auto-closeup: watch for motion inside the placed picture's region (the
-// drawing hand is the only thing moving over a locked scene), and ease the
-// existing camera pan/zoom toward it. Pure frame-differencing on a 120px
-// grayscale copy at ~10 Hz - no ML, negligible CPU. Detection reads the
-// raw frames, so the closeup never affects tracking.
-const FOLLOW = {
-  zoom: 2.6,          // closeup magnification - tight enough to matter
-  sampleMs: 100,      // sensing cadence (best effort; easing is dt-based)
-  targetTau: 0.22,    // seconds - how fast the aim point tracks the hand
-  viewTau: 0.35,      // seconds - how fast the view approaches the aim
-  senseW: 120,        // sheet-space sensing grid width (height = 1.4x)
-  diffThresh: 18,     // per-cell |delta| that counts as motion
-  minFrac: 0.002,     // motion area below this = noise
-  maxFrac: 0.75,      // above this = scene change, not a hand (a close hand covers a lot)
-  idleMs: 4000,       // no motion this long -> release (careful strokes pause a lot)
-  deadPx: 10,         // centroid must move this far to retarget
-  suspendMs: 6000,    // manual gestures own the view this long
-};
-let followLastTick = 0;
-const followCv = document.createElement('canvas');
-// Field-debuggable: every sample records why follow did or didn't act.
-// Surfaced in the debug log and readable by the replay harness.
-const followDbg = { gate: 'off', global: 0, frac: 0, noise: 0, targets: 0, engaged: false, dt: 0 };
-let followPrev = null;
-let followTarget = null;        // css-at-zoom-1 point being centred
-let followHist = [];            // sheet-space grids of the last ~0.6s
-let followInkAt = 0;            // when fresh ink last fixed the target
-let followLastMotion = 0;
-let followSuspendedUntil = 0;
-let followEngaged = false;
-
-function followSuspend() {
-  if (state.followHand) followSuspendedUntil = performance.now() + FOLLOW.suspendMs;
-}
-
-function imageQuadCss() {
-  const M = paperToCss();
-  if (!M) return null;
-  const R = matMul(M, rectMatrix());
-  const pts = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([x, y]) => matApply(R, x, y));
-  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
-}
-
-function followSample() {
-  const now = performance.now();
-  const wanted = state.followHand && state.running && !state.freeze
-    && state.pose && document.visibilityState === 'visible';
-  followDbg.gate = !state.followHand ? 'off'
-    : !state.running ? 'no-camera'
-    : state.freeze ? 'frozen'
-    : !state.pose ? 'no-pose'
-    : document.visibilityState !== 'visible' ? 'hidden'
-    : 'sensing';
-  if (wanted && el.video.videoWidth) {
-    const vw = el.video.videoWidth, vh = el.video.videoHeight;
-    // Read the frame once at reduced resolution.
-    const rw = 480, rh = Math.max(2, Math.round(rw * vh / vw));
-    if (followCv.width !== rw || followCv.height !== rh) {
-      followCv.width = rw; followCv.height = rh; followPrev = null; followHist = [];
-    }
-    const ctx = followCv.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(el.video, 0, 0, rw, rh);
-    const d = ctx.getImageData(0, 0, rw, rh).data;
-
-    // Sample in SHEET space: the tracked pose warps the picture region to a
-    // fixed grid, so handheld camera motion cancels out - the drawing is
-    // static relative to the paper, and the only diff left is the moving
-    // hand and pen. (The old video-space diff read camera shake as global
-    // motion and fine pen strokes as nothing; useless handheld.)
-    const k = vw / state.poseDetW;
-    const M = matMul(new Float64Array([k, 0, 0, 0, k, 0, 0, 0, 1]),
-                     matMul(state.pose, rectMatrix()));
-    const sw = FOLLOW.senseW, sh = Math.round(sw * 1.4), n = sw * sh;
-    const PAD = 0.18;
-    const gray = new Float32Array(n);
-    const sx = rw / vw, sy = rh / vh;
-    // inlined homography + bilinear luma: this runs ~17k times per tick on
-    // a phone, so no per-cell allocations or closures
-    const m0 = M[0], m1 = M[1], m2 = M[2], m3 = M[3], m4 = M[4], m5 = M[5],
-          m6 = M[6], m7 = M[7], m8 = M[8];
-    const lum = (i) => (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8;
-    for (let gy = 0; gy < sh; gy++) {
-      const vv = -PAD + (gy + 0.5) / sh * (1 + 2 * PAD);
-      for (let gx = 0; gx < sw; gx++) {
-        const uu = -PAD + (gx + 0.5) / sw * (1 + 2 * PAD);
-        const w = m6 * uu + m7 * vv + m8;
-        const x = (m0 * uu + m1 * vv + m2) / w * sx;
-        const y = (m3 * uu + m4 * vv + m5) / w * sy;
-        const x0 = Math.floor(x), y0 = Math.floor(y);
-        if (x0 < 0 || y0 < 0 || x0 >= rw - 1 || y0 >= rh - 1) {
-          gray[gy * sw + gx] = -1; continue;
-        }
-        // bilinear - nearest-sampling aliases on ink edges when the pose
-        // jitters sub-pixel, which reads as fake motion
-        const fx = x - x0, fy = y - y0;
-        const i00 = (y0 * rw + x0) * 4;
-        const a = lum(i00) * (1 - fx) + lum(i00 + 4) * fx;
-        const b = lum(i00 + rw * 4) * (1 - fx) + lum(i00 + rw * 4 + 4) * fx;
-        gray[gy * sw + gx] = a * (1 - fy) + b * fy;
-      }
-    }
-    if (followPrev && followPrev.length === n) {
-      let cx = 0, cy = 0, count = 0, inWin = 0;
-      for (let i = 0; i < n; i++) {
-        if (gray[i] < 0 || followPrev[i] < 0) continue;
-        inWin++;
-        if (Math.abs(gray[i] - followPrev[i]) > FOLLOW.diffThresh) {
-          cx += i % sw; cy += (i / sw) | 0; count++;
-        }
-      }
-      const frac = count / Math.max(1, inWin);
-      followDbg.frac = frac;
-      followDbg.gate = frac <= FOLLOW.minFrac ? 'no-motion'
-        : frac >= FOLLOW.maxFrac ? 'too-much-motion' : 'target';
-      if (followDbg.gate === 'target') {
-        const uu = -PAD + (cx / count + 0.5) / sw * (1 + 2 * PAD);
-        const vv = -PAD + (cy / count + 0.5) / sh * (1 + 2 * PAD);
-        const css = matApply(matMul(paperToCss(), rectMatrix()), uu, vv);
-        // Mirrored view: the element is flipped about the screen centre
-        // AFTER layout, so the on-screen x of a paper point is reflected.
-        if (state.mirrored) css[0] = window.innerWidth - css[0];
-        followDbg.rawX = css[0]; followDbg.rawY = css[1]; followDbg.rawAt = now;
-        if (!followTarget) followTarget = { x: css[0], y: css[1] };
-        else if (now - followInkAt > 1500) {
-          // the hand's motion centroid is a coarse aim; while fresh ink is
-          // fixing the nib precisely (below), don't tug the view mid-hand
-          const dx = css[0] - followTarget.x, dy = css[1] - followTarget.y;
-          if (Math.hypot(dx, dy) > FOLLOW.deadPx) {
-            // dt-based tracking: immune to throttled timers on the phone.
-            const kT = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.targetTau);
-            followTarget.x += dx * kT;
-            followTarget.y += dy * kT;
-          }
-        }
-        followLastMotion = now;
-        followDbg.targets++;
-      }
-    }
-    // Fresh ink appears exactly at the nib. Cells that were paper ~0.6s
-    // ago and are near-black now, restricted to THIN structures (strokes
-    // are 1-3mm; hands and shadows are wide), pin the target to the pen
-    // tip far more precisely than the motion centroid.
-    if (followHist.length > 6 && followHist[0].length === n) {
-      const ref = followHist[0];
-      const bin = new Uint8Array(n);
-      let cnt = 0;
-      for (let i = 0; i < n; i++) {
-        if (gray[i] >= 0 && ref[i] >= 0 && ref[i] > 150 && gray[i] < 110) { bin[i] = 1; cnt++; }
-      }
-      if (cnt > 2 && cnt < n * 0.05) {                 // AE-flicker guard
-        const morph = (src, and) => {
-          const o = new Uint8Array(n);
-          for (let y = 1; y < sh - 1; y++) {
-            for (let x = 1; x < sw - 1; x++) {
-              const i = y * sw + x;
-              const v = and
-                ? src[i] & src[i - 1] & src[i + 1] & src[i - sw] & src[i + sw]
-                : src[i] | src[i - 1] | src[i + 1] | src[i - sw] | src[i + sw];
-              o[i] = v;
-            }
-          }
-          return o;
-        };
-        const wide = morph(morph(morph(morph(bin, 1), 1), 0), 0);
-        let cx = 0, cy = 0, m = 0;
-        // prefer thin ink near the previous fix - stray specks elsewhere
-        // (marker edges, shadows) must not yank the nib across the sheet
-        const R = followInkAt && now - followInkAt < 2000 ? 24 : 1e9;
-        const px = followDbg.inkX || 0, py = followDbg.inkY || 0;
-        for (let i = 0; i < n; i++) {
-          if (bin[i] && !wide[i]) {
-            const gx = i % sw, gy = (i / sw) | 0;
-            if (R === 1e9 || Math.hypot(gx - px, gy - py) < R) { cx += gx; cy += gy; m++; }
-          }
-        }
-        if (m) {
-          followDbg.inkX = cx / m; followDbg.inkY = cy / m;
-          const uu = -PAD + (cx / m + 0.5) / sw * (1 + 2 * PAD);
-          const vv = -PAD + (cy / m + 0.5) / sh * (1 + 2 * PAD);
-          const css = matApply(matMul(paperToCss(), rectMatrix()), uu, vv);
-          if (state.mirrored) css[0] = window.innerWidth - css[0];
-          followDbg.rawX = css[0]; followDbg.rawY = css[1]; followDbg.rawAt = now;
-          followDbg.gate = 'ink';
-          if (!followTarget) followTarget = { x: css[0], y: css[1] };
-          else {
-            const kT = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.targetTau);
-            followTarget.x += (css[0] - followTarget.x) * kT;
-            followTarget.y += (css[1] - followTarget.y) * kT;
-          }
-          followInkAt = now;
-          followLastMotion = now;
-        }
-      }
-    }
-    followHist.push(gray);
-    if (followHist.length > 7) followHist.shift();
-    followPrev = gray;
-  } else {
-    followPrev = null;
-    followHist = [];
-  }
-
-  // ---- choreography: ease toward (or away from) the closeup
-  const active = wanted && followTarget
-    && now - followLastMotion < FOLLOW.idleMs
-    && now > followSuspendedUntil;
-  followDbg.engaged = followEngaged || active;
-  if (!followLastTick) followLastTick = now;
-  if (state.followHand && state.running && now - (followSample.lastLog || 0) > 4000) {
-    followSample.lastLog = now;
-    dlog(`follow ${followDbg.gate} g=${followDbg.global.toFixed(0)}`
-      + ` f=${followDbg.frac.toFixed(3)} z=${state.camZoom.toFixed(2)}`
-      + `${state.mirrored ? ' mirrored' : ''}`);
-  }
-  followMarks(now);
-  if (!active && !followEngaged) { followLastTick = now; return; }
-  const cw = window.innerWidth, ch = window.innerHeight;
-  let goalZoom = 1, goalPanX = 0, goalPanY = 0;
-  if (active) {
-    goalZoom = FOLLOW.zoom;
-    // screen = center + (css - center) * zoom + pan; solve pan for center
-    goalPanX = (cw / 2 - followTarget.x) * goalZoom;
-    goalPanY = (ch / 2 - followTarget.y) * goalZoom;
-    followEngaged = true;
-  }
-  // Time-based approach: a stretched tick moves proportionally further, so
-  // the feel is identical whether the timer fires at 100 ms or 400 ms.
-  const kV = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.viewTau);
-  followDbg.dt = now - followLastTick;   // real cadence, throttling visible
-  followLastTick = now;
-  state.camZoom += (goalZoom - state.camZoom) * kV;
-  state.camPanX += (goalPanX - state.camPanX) * kV;
-  state.camPanY += (goalPanY - state.camPanY) * kV;
-  clampCamPan();
-  updateCamTransform();
-  $('camZoom').value = String(Math.round(state.camZoom * 100));
-  $('camZoomOut').textContent = state.camZoom.toFixed(1) + '\u00d7';
-  if (!active && Math.abs(state.camZoom - 1) < 0.02) {
-    state.camZoom = 1; state.camPanX = 0; state.camPanY = 0;
-    clampCamPan(); updateCamTransform();
-    followEngaged = false;
-    followTarget = null;
-  }
-}
-setInterval(followSample, FOLLOW.sampleMs);
-
-/** Debug overlay: red square = eased focus point (what the view centres
- * on), yellow dashed = raw motion centroid of the last sample. Both live
- * in css-at-zoom-1 space, so map through the current view transform. */
-function followMarks(now) {
-  const mark = $('followMark'), raw = $('followRaw');
-  const cw = window.innerWidth / 2, ch = window.innerHeight / 2;
-  const put = (n, x, y) => {
-    n.style.display = 'block';
-    n.style.transform = `translate(${cw + (x - cw) * state.camZoom + state.camPanX}px,`
-      + `${ch + (y - ch) * state.camZoom + state.camPanY}px) translate(-50%,-50%)`;
-  };
-  const on = state.followHand && state.running;
-  if (on && followTarget) put(mark, followTarget.x, followTarget.y);
-  else mark.style.display = 'none';
-  if (on && followDbg.rawAt && now - followDbg.rawAt < 600) put(raw, followDbg.rawX, followDbg.rawY);
-  else raw.style.display = 'none';
-}
-
 function updateCamTransform() {
   const t = `translate(${state.camPanX}px, ${state.camPanY}px) scale(${state.camZoom})`
     + (state.mirrored ? ' scaleX(-1)' : '');
@@ -1115,7 +848,6 @@ let gesture = null;
 
 el.touch.addEventListener('pointerdown', (e) => {
   if (state.locked) return;
-  followSuspend();
   el.touch.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   beginGesture();
@@ -2101,7 +1833,6 @@ function wire() {
   });
 
   $('camZoom').addEventListener('input', (e) => {
-    followSuspend();
     state.camZoom = Number(e.target.value) / 100;
     $('camZoomOut').textContent = state.camZoom.toFixed(1) + '×';
     updateCamTransform();
@@ -2131,18 +1862,6 @@ function wire() {
       : 'Back to tag anchoring');
   });
   bindSlider('opacity', () => state.opacity, (v) => { state.opacity = v; });
-  function setFollow(on) {
-    state.followHand = on;
-    if (!on) followSuspendedUntil = 0;
-    $('followHand').checked = on;
-    $('btnFollow').classList.toggle('on', on);
-    toast(on
-      ? 'Following your hand - the view zooms to where you draw'
-      : 'Follow off');
-  }
-  $('followHand').addEventListener('change', (e) => setFollow(e.target.checked));
-  $('btnFollow').addEventListener('click', () => setFollow(!state.followHand));
-
   el.file.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) {
       isUpload = true;

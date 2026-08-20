@@ -30,16 +30,6 @@ html, body {
 #hud { z-index: 2; }
 #touch { position: fixed; inset: 0; z-index: 3; touch-action: none; }
 
-/* Follow-the-hand debug markers: red = eased focus point the view centres
-   on, yellow outline = raw motion centroid of the last sample. Positioned
-   in screen space (post-transform) by followSample(). */
-#followMark, #followRaw {
-  position: fixed; left: 0; top: 0; display: none;
-  pointer-events: none; z-index: 4;
-}
-#followMark { width: 18px; height: 18px; background: rgba(255, 40, 40, 0.85); outline: 2px solid #fff; }
-#followRaw { width: 26px; height: 26px; border: 2px dashed #ffd23f; }
-
 /* Mirror (state.mirrored) and digital zoom (state.camZoom) are applied to
    these three layers together as one inline transform - see
    updateCamTransform() in app.js. Detection and gestures still work in

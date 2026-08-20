@@ -15,8 +15,6 @@
 <video id="video" playsinline muted autoplay></video>
 <canvas id="gl"></canvas>
 <canvas id="hud"></canvas>
-<div id="followMark"></div>
-<div id="followRaw"></div>
 <div id="touch"></div>
 
 <div id="topbar">
@@ -26,7 +24,6 @@
   <button class="iconbtn" id="btnFreeze" title="Freeze the frame">❙❙</button>
   <button class="iconbtn" id="btnTorch" title="Torch" disabled>☀</button>
   <button class="iconbtn" id="btnMirror" title="Mirror the view to match your table">⇄</button>
-  <button class="iconbtn" id="btnFollow" title="Follow my hand - zoom to where you draw">◎</button>
   <button class="iconbtn" id="btnHelp2" title="Help">?</button>
 </div>
 
@@ -38,7 +35,6 @@
       <input type="range" id="opacity" min="5" max="100"><output id="opacityOut"></output></div>
     <div class="row"><label>Zoom</label>
       <input type="range" id="camZoom" min="100" max="400" value="100"><output id="camZoomOut">1.0×</output></div>
-    <label class="toggle"><input type="checkbox" id="followHand"> Follow my hand (auto-closeup)</label>
     <div class="btnrow">
       <button class="btn primary" id="btnLock">Lock camera view</button>
       <button class="btn" id="btnFit">Fit to tags</button>
