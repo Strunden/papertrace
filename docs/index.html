@@ -363,13 +363,16 @@ body.tracing .notTracing { display: none; }
 }
 
 /* --------------------------------------------- print step: how-it-works */
-/* One 5.6s loop: the marks pulse as the phone finds them, the picture
-   fades onto the paper, a pencil draws a stroke. */
+/* One 5.6s loop, staged in perspective: the printed sheet lies on the desk,
+   the phone hovers above it, and its screen shows the camera's straight-down
+   view of the same sheet with the picture anchored to the frame. */
 #howAnim { display: block; margin: 6px auto 2px; width: min(78vw, 300px); }
-#howAnim .mark { animation: markPulse 5.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+#howAnim .mark { animation: markPulse 5.6s ease-in-out infinite backwards; transform-origin: center; transform-box: fill-box; }
 #howAnim .appear { opacity: 0; animation: artAppear 5.6s ease-in-out infinite; }
-#howAnim .stroke { stroke-dasharray: 52; stroke-dashoffset: 52;
+#howAnim .stroke { stroke-dasharray: 70; stroke-dashoffset: 70;
   animation: strokeDraw 5.6s ease-in-out infinite; }
+#howAnim .stroke2 { stroke-dasharray: 42; stroke-dashoffset: 42;
+  animation: stroke2Draw 5.6s ease-in-out infinite; }
 #howAnim .pencil { opacity: 0; animation: pencilMove 5.6s ease-in-out infinite; }
 #howAnim .phone, #howAnim .winMove { animation: scanPan 5.6s ease-in-out infinite; }
 @keyframes markPulse {
@@ -377,18 +380,22 @@ body.tracing .notTracing { display: none; }
   20%, 100% { opacity: 1; transform: scale(1); }
 }
 @keyframes artAppear {
-  0%, 20% { opacity: 0; } 32%, 92% { opacity: 1; } 100% { opacity: 0; }
+  0%, 20% { opacity: 0; } 30%, 90% { opacity: 1; } 100% { opacity: 0; }
 }
 @keyframes strokeDraw {
-  0%, 38% { stroke-dashoffset: 52; } 78%, 92% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: 52; }
+  0%, 36% { stroke-dashoffset: 70; } 74%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 70; }
+}
+@keyframes stroke2Draw {
+  0%, 36% { stroke-dashoffset: 42; } 74%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 42; }
 }
 @keyframes pencilMove {
-  0%, 34% { opacity: 0; transform: translate(0, 0); }
-  40% { opacity: 1; }
-  58% { transform: translate(-12px, 5px); }
-  78% { opacity: 1; transform: translate(0, 9px); }
-  88%, 100% { opacity: 0; transform: translate(0, 9px); }
+  0%, 30% { opacity: 0; transform: translate(0, 0); }
+  36% { opacity: 1; }
+  56% { transform: translate(-14.3px, 8.7px); }
+  74% { opacity: 1; transform: translate(1.4px, 0.7px); }
+  86%, 100% { opacity: 0; transform: translate(1.4px, 0.7px); }
 }
 /* The classic AR scan loop: the phone pans over the sheet the whole time.
    Translate only (no rotate) so chrome and window stay perfectly in sync -
@@ -410,8 +417,8 @@ body.tracing .notTracing { display: none; }
 @keyframes cap3 { 0%, 56% { opacity: 0; } 60%, 92% { opacity: 1; } 96%, 100% { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .pencil,
-  #howAnim .phone, #howAnim .winMove {
+  #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .stroke2,
+  #howAnim .pencil, #howAnim .phone, #howAnim .winMove {
     animation: none; opacity: 1; stroke-dashoffset: 0;
   }
   #howCaption { height: auto; }
@@ -536,123 +543,129 @@ body.tracing .notTracing { display: none; }
   <div class="inner">
     <h1>Print the sheet</h1>
 
-    <svg id="howAnim" viewBox="0 -18 300 228" aria-hidden="true">
+    <svg id="howAnim" viewBox="0 -18 300 232" aria-hidden="true">
       <defs>
-        <!-- the window pans with the SAME keyframes as the phone chrome,
-             but the content it reveals never moves: the picture is anchored
+        <!-- the camera window pans with the SAME keyframes as the phone
+             chrome, but what it reveals never moves: the picture is anchored
              to the paper, not to the phone -->
-        <clipPath id="phoneScreen"><rect class="winMove" x="97" y="42" width="90" height="138" rx="4"/></clipPath>
+        <clipPath id="phoneScreen"><rect class="winMove" x="170" y="30" width="74" height="132" rx="4"/></clipPath>
       </defs>
 
       <!-- what is what -->
       <g font-family="-apple-system, sans-serif" font-size="10.5" fill="#6f695c">
-        <text x="30" y="-6">printed sheet</text>
-        <path d="M52 -2 C 52 6, 48 10, 44 16" fill="none" stroke="#a29a88" stroke-width="1"/>
-        <text x="242" y="-6">phone</text>
-        <path d="M254 -2 C 252 8, 232 16, 210 30" fill="none" stroke="#a29a88" stroke-width="1"/>
+        <text x="4" y="92">printed sheet</text>
+        <path d="M 34 96 C 38 101, 42 105, 46 109" fill="none" stroke="#a29a88" stroke-width="1"/>
+        <text x="256" y="-4">phone</text>
+        <path d="M 268 0 C 265 8, 258 15, 250 21" fill="none" stroke="#a29a88" stroke-width="1"/>
       </g>
 
-      <!-- the world: sheet, pencil, drawing hand -->
-      <g>
-        <rect x="30" y="18" width="150" height="180" rx="4" fill="#fffdf6"
-            stroke="#d8cfb8" stroke-width="1.5"/>
-          <g fill="#2b261d">
-            <rect class="mark" x="40" y="28" width="11" height="11"/>
-            <rect class="mark" x="99.5" y="28" width="11" height="11" style="animation-delay:.08s"/>
-            <rect class="mark" x="159" y="28" width="11" height="11" style="animation-delay:.16s"/>
-            <rect class="mark" x="40" y="102.5" width="11" height="11" style="animation-delay:.24s"/>
-            <rect class="mark" x="159" y="102.5" width="11" height="11" style="animation-delay:.32s"/>
-            <rect class="mark" x="40" y="177" width="11" height="11" style="animation-delay:.4s"/>
-            <rect class="mark" x="99.5" y="177" width="11" height="11" style="animation-delay:.48s"/>
-            <rect class="mark" x="159" y="177" width="11" height="11" style="animation-delay:.56s"/>
-          </g>
-          <rect x="73" y="52" width="64" height="97" fill="none"
-                stroke="#2b261d" stroke-width="1.2"/>
+      <!-- the world, seen at an angle: the printed sheet lies on the desk
+           (oblique projection: x' = x + 0.42y, y' = 0.38y) -->
+      <path d="M 24 110 L 164 110 L 235.4 174.6 L 95.4 174.6 Z" fill="#26221b" opacity="0.08"/>
+      <g transform="matrix(1 0 0.42 0.38 20 106)">
+        <rect x="0" y="0" width="140" height="170" rx="3" fill="#fffdf6"
+              stroke="#d8cfb8" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+        <g fill="#2b261d">
+          <rect class="mark" x="10" y="10" width="11" height="11"/>
+          <rect class="mark" x="64.5" y="10" width="11" height="11" style="animation-delay:.08s"/>
+          <rect class="mark" x="119" y="10" width="11" height="11" style="animation-delay:.16s"/>
+          <rect class="mark" x="10" y="79.5" width="11" height="11" style="animation-delay:.24s"/>
+          <rect class="mark" x="119" y="79.5" width="11" height="11" style="animation-delay:.32s"/>
+          <rect class="mark" x="10" y="149" width="11" height="11" style="animation-delay:.4s"/>
+          <rect class="mark" x="64.5" y="149" width="11" height="11" style="animation-delay:.48s"/>
+          <rect class="mark" x="119" y="149" width="11" height="11" style="animation-delay:.56s"/>
+        </g>
+        <rect x="38" y="42" width="64" height="86" fill="none"
+              stroke="#2b261d" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <!-- the traced petal: the only thing that ever lands on the paper -->
+        <path class="stroke" d="M 68 86 C 55 88, 46 97, 44 109 C 55.5 106, 65 95.5, 68.5 88"
+              stroke="#26221b" stroke-width="2.2" fill="none" stroke-linecap="round"
+              vector-effect="non-scaling-stroke"/>
       </g>
-      <path class="stroke" d="M96 96.2 C 83 95.6, 74.6 97.6, 74.4 100 C 74.6 102.4, 83 104.4, 96 103.8"
-            stroke="#26221b" stroke-width="2" fill="none" stroke-linecap="round"/>
-        <g class="pencil">
-          <path d="M67 77 C 46 70, 22 64, 0 61 L 0 79 C 24 82, 48 87, 69 92 Z"
-                fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
-          <g transform="translate(84, 96) rotate(-50)">
-            <rect x="-3" y="-32" width="6.5" height="24" rx="2" fill="#c9a227"/>
+
+      <!-- the drawing hand reaches in from the viewer's side -->
+      <g class="pencil">
+        <path d="M 104 124 C 70 142, 34 162, 0 178 L 0 200 C 42 182, 80 162, 118 142 Z"
+              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
+        <g transform="translate(124.1, 138.7) scale(1.35) translate(-84.3, -97.5)">
+          <g transform="translate(84, 96) rotate(-35)">
+            <rect x="-3" y="-40" width="6.5" height="32" rx="2" fill="#c9a227"/>
             <path d="M-3 -8 L0.3 1.5 L3.5 -8 Z" fill="#e8d9b8"/>
             <path d="M-0.6 -1.2 L0.3 1.5 L1.4 -1.2 Z" fill="#26221b"/>
           </g>
           <ellipse cx="73" cy="84" rx="9.5" ry="8" transform="rotate(38 73 84)"
-                   fill="#f6efe0" stroke="#26221b" stroke-width="1.6"/>
+                   fill="#f6efe0" stroke="#26221b" stroke-width="1.2"/>
           <path d="M77 77.5 C 81 76.5, 83.5 78, 82 81 M79.5 82 C 83.5 81, 85.5 83, 84 86"
-                fill="none" stroke="#26221b" stroke-width="1.4" stroke-linecap="round"/>
-        </g>
-
-      <!-- through the window: the same world, re-rendered in place, plus
-           the daisy that only exists on the screen -->
-      <g clip-path="url(#phoneScreen)">
-        <rect x="0" y="-18" width="300" height="228" fill="#f4eede"/>
-        <g>
-          <rect x="30" y="18" width="150" height="180" rx="4" fill="#fffdf6"
-            stroke="#d8cfb8" stroke-width="1.5"/>
-          <g fill="#2b261d">
-            <rect class="mark" x="40" y="28" width="11" height="11"/>
-            <rect class="mark" x="99.5" y="28" width="11" height="11" style="animation-delay:.08s"/>
-            <rect class="mark" x="159" y="28" width="11" height="11" style="animation-delay:.16s"/>
-            <rect class="mark" x="40" y="102.5" width="11" height="11" style="animation-delay:.24s"/>
-            <rect class="mark" x="159" y="102.5" width="11" height="11" style="animation-delay:.32s"/>
-            <rect class="mark" x="40" y="177" width="11" height="11" style="animation-delay:.4s"/>
-            <rect class="mark" x="99.5" y="177" width="11" height="11" style="animation-delay:.48s"/>
-            <rect class="mark" x="159" y="177" width="11" height="11" style="animation-delay:.56s"/>
-          </g>
-          <rect x="73" y="52" width="64" height="97" fill="none"
-                stroke="#2b261d" stroke-width="1.2"/>
-        </g>
-        <g class="appear" stroke="#5a5342" fill="none" stroke-width="1.6"
-           stroke-linecap="round" opacity="0">
-          <circle cx="105" cy="100" r="7"/>
-          <ellipse cx="105.0" cy="81.0" rx="4.5" ry="12" transform="rotate(0 105.0 81.0)"/>
-            <ellipse cx="116.2" cy="84.6" rx="4.5" ry="12" transform="rotate(36 116.2 84.6)"/>
-            <ellipse cx="123.1" cy="94.1" rx="4.5" ry="12" transform="rotate(72 123.1 94.1)"/>
-            <ellipse cx="123.1" cy="105.9" rx="4.5" ry="12" transform="rotate(108 123.1 105.9)"/>
-            <ellipse cx="116.2" cy="115.4" rx="4.5" ry="12" transform="rotate(144 116.2 115.4)"/>
-            <ellipse cx="105.0" cy="119.0" rx="4.5" ry="12" transform="rotate(180 105.0 119.0)"/>
-            <ellipse cx="93.8" cy="115.4" rx="4.5" ry="12" transform="rotate(216 93.8 115.4)"/>
-            <ellipse cx="86.9" cy="105.9" rx="4.5" ry="12" transform="rotate(252 86.9 105.9)"/>
-            <ellipse cx="86.9" cy="94.1" rx="4.5" ry="12" transform="rotate(288 86.9 94.1)"/>
-            <ellipse cx="93.8" cy="84.6" rx="4.5" ry="12" transform="rotate(324 93.8 84.6)"/>
-          <path d="M105 119 C 104 130, 107 136, 105 144"/>
-        </g>
-        <path class="stroke" d="M96 96.2 C 83 95.6, 74.6 97.6, 74.4 100 C 74.6 102.4, 83 104.4, 96 103.8"
-            stroke="#26221b" stroke-width="2" fill="none" stroke-linecap="round"/>
-        <g class="pencil">
-          <path d="M67 77 C 46 70, 22 64, 0 61 L 0 79 C 24 82, 48 87, 69 92 Z"
-                fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
-          <g transform="translate(84, 96) rotate(-50)">
-            <rect x="-3" y="-32" width="6.5" height="24" rx="2" fill="#c9a227"/>
-            <path d="M-3 -8 L0.3 1.5 L3.5 -8 Z" fill="#e8d9b8"/>
-            <path d="M-0.6 -1.2 L0.3 1.5 L1.4 -1.2 Z" fill="#26221b"/>
-          </g>
-          <ellipse cx="73" cy="84" rx="9.5" ry="8" transform="rotate(38 73 84)"
-                   fill="#f6efe0" stroke="#26221b" stroke-width="1.6"/>
-          <path d="M77 77.5 C 81 76.5, 83.5 78, 82 81 M79.5 82 C 83.5 81, 85.5 83, 84 86"
-                fill="none" stroke="#26221b" stroke-width="1.4" stroke-linecap="round"/>
+                fill="none" stroke="#26221b" stroke-width="1" stroke-linecap="round"/>
         </g>
       </g>
 
-      <!-- the phone chrome, held and panned over the sheet -->
+      <!-- the phone hovers above the desk: soft shadow + body -->
       <g class="phone">
-        <rect x="88" y="32" width="108" height="158" rx="15" fill="none"
-              stroke="#26221b" stroke-width="9"/>
-        <rect x="97" y="42" width="90" height="138" rx="4" fill="#2b261d" opacity="0.05"/>
-        <rect x="97" y="42" width="90" height="138" rx="4" fill="none"
+        <ellipse cx="200" cy="170" rx="62" ry="10" fill="#26221b" opacity="0.1"/>
+        <rect x="163" y="22" width="88" height="148" rx="14" fill="#26221b"/>
+      </g>
+
+      <!-- the camera view: an upright, straight-down look at the same sheet.
+           It stays glued to the world while the window pans across it; the
+           daisy exists only in here, anchored to the frame -->
+      <g clip-path="url(#phoneScreen)">
+        <rect x="152" y="24" width="106" height="146" fill="#e9dec5"/>
+        <rect x="165" y="45" width="84" height="102" rx="2" fill="#fffdf6"
+              stroke="#d8cfb8" stroke-width="1"/>
+        <g fill="#2b261d">
+          <rect class="mark" x="171" y="51" width="6.6" height="6.6"/>
+          <rect class="mark" x="203.7" y="51" width="6.6" height="6.6" style="animation-delay:.08s"/>
+          <rect class="mark" x="236.4" y="51" width="6.6" height="6.6" style="animation-delay:.16s"/>
+          <rect class="mark" x="171" y="92.7" width="6.6" height="6.6" style="animation-delay:.24s"/>
+          <rect class="mark" x="236.4" y="92.7" width="6.6" height="6.6" style="animation-delay:.32s"/>
+          <rect class="mark" x="171" y="134.4" width="6.6" height="6.6" style="animation-delay:.4s"/>
+          <rect class="mark" x="203.7" y="134.4" width="6.6" height="6.6" style="animation-delay:.48s"/>
+          <rect class="mark" x="236.4" y="134.4" width="6.6" height="6.6" style="animation-delay:.56s"/>
+        </g>
+        <rect x="187.8" y="70.2" width="38.4" height="51.6" fill="none"
+              stroke="#2b261d" stroke-width="1.1"/>
+        <g class="appear" stroke="#5a5342" fill="none" stroke-width="1.4"
+           stroke-linecap="round" opacity="0">
+          <circle cx="207" cy="96" r="4.5"/>
+          <ellipse cx="207" cy="84.5" rx="2.9" ry="7.8"/>
+          <ellipse cx="213.8" cy="86.7" rx="2.9" ry="7.8" transform="rotate(36 213.8 86.7)"/>
+          <ellipse cx="217.9" cy="92.4" rx="2.9" ry="7.8" transform="rotate(72 217.9 92.4)"/>
+          <ellipse cx="217.9" cy="99.6" rx="2.9" ry="7.8" transform="rotate(108 217.9 99.6)"/>
+          <ellipse cx="213.8" cy="105.3" rx="2.9" ry="7.8" transform="rotate(144 213.8 105.3)"/>
+          <ellipse cx="207" cy="107.5" rx="2.9" ry="7.8" transform="rotate(180 207 107.5)"/>
+          <ellipse cx="200.2" cy="105.3" rx="2.9" ry="7.8" transform="rotate(216 200.2 105.3)"/>
+          <ellipse cx="196.1" cy="99.6" rx="2.9" ry="7.8" transform="rotate(252 196.1 99.6)"/>
+          <ellipse cx="196.1" cy="92.4" rx="2.9" ry="7.8" transform="rotate(288 196.1 92.4)"/>
+          <ellipse cx="200.2" cy="86.7" rx="2.9" ry="7.8" transform="rotate(324 200.2 86.7)"/>
+          <path d="M 207 107.5 C 206 113, 208 117, 207 121"/>
+        </g>
+        <!-- the camera also sees the pencil stroke landing on the paper -->
+        <path class="stroke2" d="M 205.8 96.6 C 198 97.8, 192.6 103.2, 191.4 110.4 C 198.3 108.6, 204 102.3, 206.1 97.8"
+              stroke="#26221b" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+      </g>
+
+      <!-- chrome above the glass: bezel, camera dot, scan brackets, hand -->
+      <g class="phone">
+        <rect x="170" y="30" width="74" height="132" rx="4" fill="#2b261d" opacity="0.05"/>
+        <rect x="170" y="30" width="74" height="132" rx="4" fill="none"
               stroke="#4a443a" stroke-width="1"/>
-        <circle cx="142" cy="37.5" r="1.6" fill="#4a443a"/>
-        <path d="M204 150 C 232 146, 268 156, 300 168 L 300 194 C 262 186, 228 178, 202 172 Z"
+        <circle cx="207" cy="26" r="1.6" fill="#4a443a"/>
+        <g fill="none" stroke="#c9a227" stroke-width="2" stroke-linecap="round">
+          <path d="M 176 43 V 37 H 182"/>
+          <path d="M 232 37 H 238 V 43"/>
+          <path d="M 176 149 V 155 H 182"/>
+          <path d="M 232 155 H 238 V 149"/>
+        </g>
+        <path d="M 262 130 C 276 133, 290 140, 300 146 L 300 180 C 289 172, 275 163, 260 156
+                 C 254 152, 254 136, 262 130 Z"
               fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
-        <path d="M194 136 C 205 130, 213 136, 211 146 C 218 148, 219 156, 213 159
-                 C 217 163, 215 170, 209 171 C 211 176, 207 181, 200 180
-                 C 192 179, 188 172, 189 164 L 190 143 Z"
-              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
-        <path d="M189 148 C 180 146, 176 138, 182 133 C 187 129, 194 131, 195 137"
-              fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
+        <g transform="translate(55, -20)">
+          <path d="M194 136 C 205 130, 213 136, 211 146 C 218 148, 219 156, 213 159
+                   C 217 163, 215 170, 209 171 C 211 176, 207 181, 200 180
+                   C 192 179, 188 172, 189 164 L 190 143 Z"
+                fill="#f6efe0" stroke="#26221b" stroke-width="1.6" stroke-linejoin="round"/>
+        </g>
       </g>
     </svg>
     <p id="howCaption" aria-hidden="true">

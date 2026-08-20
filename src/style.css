@@ -353,13 +353,16 @@ body.tracing .notTracing { display: none; }
 }
 
 /* --------------------------------------------- print step: how-it-works */
-/* One 5.6s loop: the marks pulse as the phone finds them, the picture
-   fades onto the paper, a pencil draws a stroke. */
+/* One 5.6s loop, staged in perspective: the printed sheet lies on the desk,
+   the phone hovers above it, and its screen shows the camera's straight-down
+   view of the same sheet with the picture anchored to the frame. */
 #howAnim { display: block; margin: 6px auto 2px; width: min(78vw, 300px); }
-#howAnim .mark { animation: markPulse 5.6s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+#howAnim .mark { animation: markPulse 5.6s ease-in-out infinite backwards; transform-origin: center; transform-box: fill-box; }
 #howAnim .appear { opacity: 0; animation: artAppear 5.6s ease-in-out infinite; }
-#howAnim .stroke { stroke-dasharray: 52; stroke-dashoffset: 52;
+#howAnim .stroke { stroke-dasharray: 70; stroke-dashoffset: 70;
   animation: strokeDraw 5.6s ease-in-out infinite; }
+#howAnim .stroke2 { stroke-dasharray: 42; stroke-dashoffset: 42;
+  animation: stroke2Draw 5.6s ease-in-out infinite; }
 #howAnim .pencil { opacity: 0; animation: pencilMove 5.6s ease-in-out infinite; }
 #howAnim .phone, #howAnim .winMove { animation: scanPan 5.6s ease-in-out infinite; }
 @keyframes markPulse {
@@ -367,18 +370,22 @@ body.tracing .notTracing { display: none; }
   20%, 100% { opacity: 1; transform: scale(1); }
 }
 @keyframes artAppear {
-  0%, 20% { opacity: 0; } 32%, 92% { opacity: 1; } 100% { opacity: 0; }
+  0%, 20% { opacity: 0; } 30%, 90% { opacity: 1; } 100% { opacity: 0; }
 }
 @keyframes strokeDraw {
-  0%, 38% { stroke-dashoffset: 52; } 78%, 92% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: 52; }
+  0%, 36% { stroke-dashoffset: 70; } 74%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 70; }
+}
+@keyframes stroke2Draw {
+  0%, 36% { stroke-dashoffset: 42; } 74%, 92% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 42; }
 }
 @keyframes pencilMove {
-  0%, 34% { opacity: 0; transform: translate(0, 0); }
-  40% { opacity: 1; }
-  58% { transform: translate(-12px, 5px); }
-  78% { opacity: 1; transform: translate(0, 9px); }
-  88%, 100% { opacity: 0; transform: translate(0, 9px); }
+  0%, 30% { opacity: 0; transform: translate(0, 0); }
+  36% { opacity: 1; }
+  56% { transform: translate(-14.3px, 8.7px); }
+  74% { opacity: 1; transform: translate(1.4px, 0.7px); }
+  86%, 100% { opacity: 0; transform: translate(1.4px, 0.7px); }
 }
 /* The classic AR scan loop: the phone pans over the sheet the whole time.
    Translate only (no rotate) so chrome and window stay perfectly in sync -
@@ -400,8 +407,8 @@ body.tracing .notTracing { display: none; }
 @keyframes cap3 { 0%, 56% { opacity: 0; } 60%, 92% { opacity: 1; } 96%, 100% { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
-  #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .pencil,
-  #howAnim .phone, #howAnim .winMove {
+  #howAnim .mark, #howAnim .appear, #howAnim .stroke, #howAnim .stroke2,
+  #howAnim .pencil, #howAnim .phone, #howAnim .winMove {
     animation: none; opacity: 1; stroke-dashoffset: 0;
   }
   #howCaption { height: auto; }
