@@ -232,6 +232,8 @@ const followCv = document.createElement('canvas');
 const followDbg = { gate: 'off', global: 0, frac: 0, noise: 0, targets: 0, engaged: false, dt: 0 };
 let followPrev = null;
 let followTarget = null;        // css-at-zoom-1 point being centred
+let followHist = [];            // sheet-space grids of the last ~0.6s
+let followInkAt = 0;            // when fresh ink last fixed the target
 let followLastMotion = 0;
 let followSuspendedUntil = 0;
 let followEngaged = false;
@@ -264,7 +266,7 @@ function followSample() {
     // Read the frame once at reduced resolution.
     const rw = 480, rh = Math.max(2, Math.round(rw * vh / vw));
     if (followCv.width !== rw || followCv.height !== rh) {
-      followCv.width = rw; followCv.height = rh; followPrev = null;
+      followCv.width = rw; followCv.height = rh; followPrev = null; followHist = [];
     }
     const ctx = followCv.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(el.video, 0, 0, rw, rh);
@@ -329,7 +331,9 @@ function followSample() {
         if (state.mirrored) css[0] = window.innerWidth - css[0];
         followDbg.rawX = css[0]; followDbg.rawY = css[1]; followDbg.rawAt = now;
         if (!followTarget) followTarget = { x: css[0], y: css[1] };
-        else {
+        else if (now - followInkAt > 1500) {
+          // the hand's motion centroid is a coarse aim; while fresh ink is
+          // fixing the nib precisely (below), don't tug the view mid-hand
           const dx = css[0] - followTarget.x, dy = css[1] - followTarget.y;
           if (Math.hypot(dx, dy) > FOLLOW.deadPx) {
             // dt-based tracking: immune to throttled timers on the phone.
@@ -342,9 +346,68 @@ function followSample() {
         followDbg.targets++;
       }
     }
+    // Fresh ink appears exactly at the nib. Cells that were paper ~0.6s
+    // ago and are near-black now, restricted to THIN structures (strokes
+    // are 1-3mm; hands and shadows are wide), pin the target to the pen
+    // tip far more precisely than the motion centroid.
+    if (followHist.length > 6 && followHist[0].length === n) {
+      const ref = followHist[0];
+      const bin = new Uint8Array(n);
+      let cnt = 0;
+      for (let i = 0; i < n; i++) {
+        if (gray[i] >= 0 && ref[i] >= 0 && ref[i] > 150 && gray[i] < 110) { bin[i] = 1; cnt++; }
+      }
+      if (cnt > 2 && cnt < n * 0.05) {                 // AE-flicker guard
+        const morph = (src, and) => {
+          const o = new Uint8Array(n);
+          for (let y = 1; y < sh - 1; y++) {
+            for (let x = 1; x < sw - 1; x++) {
+              const i = y * sw + x;
+              const v = and
+                ? src[i] & src[i - 1] & src[i + 1] & src[i - sw] & src[i + sw]
+                : src[i] | src[i - 1] | src[i + 1] | src[i - sw] | src[i + sw];
+              o[i] = v;
+            }
+          }
+          return o;
+        };
+        const wide = morph(morph(morph(morph(bin, 1), 1), 0), 0);
+        let cx = 0, cy = 0, m = 0;
+        // prefer thin ink near the previous fix - stray specks elsewhere
+        // (marker edges, shadows) must not yank the nib across the sheet
+        const R = followInkAt && now - followInkAt < 2000 ? 24 : 1e9;
+        const px = followDbg.inkX || 0, py = followDbg.inkY || 0;
+        for (let i = 0; i < n; i++) {
+          if (bin[i] && !wide[i]) {
+            const gx = i % sw, gy = (i / sw) | 0;
+            if (R === 1e9 || Math.hypot(gx - px, gy - py) < R) { cx += gx; cy += gy; m++; }
+          }
+        }
+        if (m) {
+          followDbg.inkX = cx / m; followDbg.inkY = cy / m;
+          const uu = -PAD + (cx / m + 0.5) / sw * (1 + 2 * PAD);
+          const vv = -PAD + (cy / m + 0.5) / sh * (1 + 2 * PAD);
+          const css = matApply(matMul(paperToCss(), rectMatrix()), uu, vv);
+          if (state.mirrored) css[0] = window.innerWidth - css[0];
+          followDbg.rawX = css[0]; followDbg.rawY = css[1]; followDbg.rawAt = now;
+          followDbg.gate = 'ink';
+          if (!followTarget) followTarget = { x: css[0], y: css[1] };
+          else {
+            const kT = 1 - Math.exp(-(now - followLastTick) / 1000 / FOLLOW.targetTau);
+            followTarget.x += (css[0] - followTarget.x) * kT;
+            followTarget.y += (css[1] - followTarget.y) * kT;
+          }
+          followInkAt = now;
+          followLastMotion = now;
+        }
+      }
+    }
+    followHist.push(gray);
+    if (followHist.length > 7) followHist.shift();
     followPrev = gray;
   } else {
     followPrev = null;
+    followHist = [];
   }
 
   // ---- choreography: ease toward (or away from) the closeup
