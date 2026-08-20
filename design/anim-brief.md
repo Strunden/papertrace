@@ -25,9 +25,18 @@ this screen must make them *get* what is about to happen, wordlessly.
   `test/anim_preview.py` measures this (phone must move > 5 px between pan
   extremes, daisy exactly 0) and must print PASS.
 - **Screen-only picture**: the daisy exists only inside the phone-screen clip.
-- **Through-window continuity**: geometry (marks, frame, pencil, hands) continues
-  across the screen edge with no offset. The screen is a re-render of reality
-  plus the daisy.
+- **Camera truth** (replaces the old 1:1-continuity rule after the Round-1
+  review): the view through the screen must be geometrically consistent with
+  the phone's pose relative to the sheet. The Round-1 winner showed an
+  upright phone over an obliquely-projected sheet whose screen displayed a
+  perfectly rectified straight-down view - physically impossible, and the
+  flaw Frank called out. Fix it one of two honest ways: (a) pose the phone
+  parallel to the sheet (drawn foreshortened, tilted just enough that the
+  viewer still sees its screen) so a near-rectified view is truthful, or
+  (b) keep the upright phone but render the screen content with the
+  perspective the camera would actually see from that pose (skewed sheet,
+  daisy skewed onto it). Whichever you choose, a viewer who understands
+  cameras must not be able to call the geometry wrong.
 - **Reduced motion**: `prefers-reduced-motion` shows a meaningful static final
   state (everything visible, no animation).
 - The two labels ("printed sheet", "phone") and the synced 3-phase caption strip
@@ -53,6 +62,15 @@ persistence, detection feedback. But HOW that looks is your call.
 **A named style direction will be assigned per variant.** Commit to it hard —
 a timid version of a style reads as a mistake; a committed one reads as a
 choice.
+
+## Round 2 composition base (decided)
+Frank picked Round 1's Variant B ("perspective scene") as the winning
+composition: desk in oblique projection, sheet lying on it, phone held above
+with a cast shadow, screen as a camera viewfinder, hand tracing on the paper.
+That composition is now the BASE in your working tree - restyle it, repose
+the phone for camera truth, redraw every element in your assigned style, but
+keep the scene's cast (sheet on desk, hovering phone, viewfinder, tracing
+hand) and the six-beat story.
 
 ## Technical constraints
 - Everything lives in two places: the `<svg id="howAnim" …>…</svg>` block in
