@@ -2023,13 +2023,17 @@ function wire() {
       : 'Back to tag anchoring');
   });
   bindSlider('opacity', () => state.opacity, (v) => { state.opacity = v; });
-  $('followHand').addEventListener('change', (e) => {
-    state.followHand = e.target.checked;
-    if (!state.followHand) followSuspendedUntil = 0;
-    toast(state.followHand
+  function setFollow(on) {
+    state.followHand = on;
+    if (!on) followSuspendedUntil = 0;
+    $('followHand').checked = on;
+    $('btnFollow').classList.toggle('on', on);
+    toast(on
       ? 'Following your hand - the view zooms to where you draw'
       : 'Follow off');
-  });
+  }
+  $('followHand').addEventListener('change', (e) => setFollow(e.target.checked));
+  $('btnFollow').addEventListener('click', () => setFollow(!state.followHand));
 
   el.file.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) {

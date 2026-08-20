@@ -341,10 +341,12 @@ def run(headed=False):
         # should ease into a closeup on the hand, and release when it stops.
         page.evaluate("() => { window.__stillCam = true; }")
         page.wait_for_timeout(800)
-        open_tab('place')
-        page.check("#followHand")
+        page.click("#btnFollow")   # the prominent top-bar toggle
         page.wait_for_timeout(300)
-        open_tab('place')            # close the sheet so the view is clean
+        check("top-bar follow toggle engages and syncs",
+              page.evaluate("() => state.followHand")
+              and page.evaluate("() => document.getElementById('followHand').checked")
+              and page.evaluate("() => document.getElementById('btnFollow').classList.contains('on')"))
         page.evaluate("() => { window.__handBlob = true; }")
         try:
             page.wait_for_function("() => state.camZoom > 1.6", timeout=15000)
@@ -375,8 +377,9 @@ def run(headed=False):
             released = False
         check("follow releases when the hand stops", released,
               f"camZoom={page.evaluate('() => state.camZoom'):.2f}")
-        open_tab('place')
-        page.uncheck("#followHand")
+        page.click("#btnFollow")
+        check("top-bar follow toggle disengages",
+              not page.evaluate("() => state.followHand"))
         page.evaluate("() => { window.__stillCam = false; state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; clampCamPan(); updateCamTransform(); }")
         page.wait_for_timeout(300)
 
