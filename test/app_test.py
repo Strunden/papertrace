@@ -366,6 +366,16 @@ def run(headed=False):
         # negative-x toward it...
         panx = page.evaluate("() => state.camPanX")
         check("follow pans toward the hand (direction)", panx < -20, f"camPanX={panx:.0f}")
+        # Debug marker: red square = eased focus point. While engaged it is
+        # visible and converges near screen centre (the view centres on it).
+        mark = page.evaluate("""() => {
+          const r = document.getElementById('followMark').getBoundingClientRect();
+          return { shown: r.width > 0, dx: r.x + r.width/2 - innerWidth/2,
+                   dy: r.y + r.height/2 - innerHeight/2 };
+        }""")
+        check("follow debug marker shown near the focus centre",
+              mark["shown"] and abs(mark["dx"]) < 260 and abs(mark["dy"]) < 260,
+              f"marker offset=({mark['dx']:.0f},{mark['dy']:.0f})px")
         # ...and MIRRORED, the same hand appears on the LEFT, so pan flips
         # sign. Regression for the mirror-mode targeting bug.
         page.click("#btnMirror")
@@ -386,6 +396,10 @@ def run(headed=False):
         page.click("#btnFollow")
         check("top-bar follow toggle disengages",
               not page.evaluate("() => state.followHand"))
+        page.wait_for_timeout(300)
+        check("follow debug marker hidden when follow is off",
+              page.evaluate("() => document.getElementById('followMark')"
+                            ".style.display === 'none'"))
         page.evaluate("() => { window.__stillCam = false; state.camZoom = 1; state.camPanX = 0; state.camPanY = 0; clampCamPan(); updateCamTransform(); }")
         page.wait_for_timeout(300)
 

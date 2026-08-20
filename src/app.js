@@ -313,6 +313,7 @@ function followSample() {
           // AFTER layout, so the on-screen x of a video point is reflected.
           // Without this, follow zooms to the horizontally flipped spot.
           if (state.mirrored) css[0] = window.innerWidth - css[0];
+          followDbg.rawX = css[0]; followDbg.rawY = css[1]; followDbg.rawAt = now;
           if (!followTarget) followTarget = { x: css[0], y: css[1] };
           else {
             const dx = css[0] - followTarget.x, dy = css[1] - followTarget.y;
@@ -345,6 +346,7 @@ function followSample() {
       + ` f=${followDbg.frac.toFixed(3)} z=${state.camZoom.toFixed(2)}`
       + `${state.mirrored ? ' mirrored' : ''}`);
   }
+  followMarks(now);
   if (!active && !followEngaged) { followLastTick = now; return; }
   const cw = window.innerWidth, ch = window.innerHeight;
   let goalZoom = 1, goalPanX = 0, goalPanY = 0;
@@ -376,6 +378,24 @@ function followSample() {
 }
 setInterval(followSample, FOLLOW.sampleMs);
 
+/** Debug overlay: red square = eased focus point (what the view centres
+ * on), yellow dashed = raw motion centroid of the last sample. Both live
+ * in css-at-zoom-1 space, so map through the current view transform. */
+function followMarks(now) {
+  const mark = $('followMark'), raw = $('followRaw');
+  const cw = window.innerWidth / 2, ch = window.innerHeight / 2;
+  const put = (n, x, y) => {
+    n.style.display = 'block';
+    n.style.transform = `translate(${cw + (x - cw) * state.camZoom + state.camPanX}px,`
+      + `${ch + (y - ch) * state.camZoom + state.camPanY}px) translate(-50%,-50%)`;
+  };
+  const on = state.followHand && state.running;
+  if (on && followTarget) put(mark, followTarget.x, followTarget.y);
+  else mark.style.display = 'none';
+  if (on && followDbg.rawAt && now - followDbg.rawAt < 600) put(raw, followDbg.rawX, followDbg.rawY);
+  else raw.style.display = 'none';
+}
+
 function updateCamTransform() {
   const t = `translate(${state.camPanX}px, ${state.camPanY}px) scale(${state.camZoom})`
     + (state.mirrored ? ' scaleX(-1)' : '');
@@ -387,11 +407,13 @@ function updateCamTransform() {
 /** Camera pan is only meaningful up to the point the zoomed video still
  * covers the viewport - beyond that you'd see empty space past its edge. */
 function clampCamPan() {
-  const vw = el.video.videoWidth || 1280, vh = el.video.videoHeight || 720;
+  // object-fit: cover crops the video to the viewport box BEFORE the
+  // transform, so the rendered area is exactly viewport * zoom - the
+  // native frame size is irrelevant. Clamping to it allowed panning far
+  // past the visible video into black.
   const cw = window.innerWidth, ch = window.innerHeight;
-  const coverS = Math.max(cw / vw, ch / vh) * state.camZoom;
-  const maxPanX = Math.max(0, (vw * coverS - cw) / 2);
-  const maxPanY = Math.max(0, (vh * coverS - ch) / 2);
+  const maxPanX = Math.max(0, cw * (state.camZoom - 1) / 2);
+  const maxPanY = Math.max(0, ch * (state.camZoom - 1) / 2);
   state.camPanX = Math.max(-maxPanX, Math.min(maxPanX, state.camPanX));
   state.camPanY = Math.max(-maxPanY, Math.min(maxPanY, state.camPanY));
 }
