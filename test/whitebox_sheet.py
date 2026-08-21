@@ -57,19 +57,90 @@ async ([b64, style]) => {
   const wbCv = document.createElement('canvas'); wbCv.width = ww; wbCv.height = wh;
   wbCv.getContext('2d').putImageData(wim, 0, 0);
 
+  // true k-means palette reduction (not per-channel posterize)
+  const kmeans = (cv, K) => {
+    const c2 = document.createElement('canvas');
+    c2.width = cv.width; c2.height = cv.height;
+    const g2 = c2.getContext('2d', { willReadFrequently: true });
+    g2.drawImage(cv, 0, 0);
+    const im2 = g2.getImageData(0, 0, c2.width, c2.height);
+    const d2 = im2.data, np = c2.width * c2.height;
+    const step = Math.max(1, Math.floor(np / 9000));
+    const cent = [];
+    for (let k2 = 0; k2 < K; k2++) {
+      const i = Math.floor((k2 + 0.5) / K * np) * 4;
+      cent.push([d2[i], d2[i + 1], d2[i + 2]]);
+    }
+    for (let it = 0; it < 10; it++) {
+      const acc = cent.map(() => [0, 0, 0, 0]);
+      for (let i = 0; i < np; i += step) {
+        const r = d2[i * 4], g3 = d2[i * 4 + 1], b2 = d2[i * 4 + 2];
+        let bi = 0, bd = 1e9;
+        for (let k2 = 0; k2 < K; k2++) {
+          const dd = (cent[k2][0] - r) ** 2 + (cent[k2][1] - g3) ** 2 + (cent[k2][2] - b2) ** 2;
+          if (dd < bd) { bd = dd; bi = k2; }
+        }
+        acc[bi][0] += r; acc[bi][1] += g3; acc[bi][2] += b2; acc[bi][3]++;
+      }
+      for (let k2 = 0; k2 < K; k2++) {
+        if (acc[k2][3]) cent[k2] = [acc[k2][0] / acc[k2][3], acc[k2][1] / acc[k2][3], acc[k2][2] / acc[k2][3]];
+      }
+    }
+    for (let i = 0; i < np; i++) {
+      const r = d2[i * 4], g3 = d2[i * 4 + 1], b2 = d2[i * 4 + 2];
+      let bi = 0, bd = 1e9;
+      for (let k2 = 0; k2 < K; k2++) {
+        const dd = (cent[k2][0] - r) ** 2 + (cent[k2][1] - g3) ** 2 + (cent[k2][2] - b2) ** 2;
+        if (dd < bd) { bd = dd; bi = k2; }
+      }
+      d2[i * 4] = cent[bi][0]; d2[i * 4 + 1] = cent[bi][1]; d2[i * 4 + 2] = cent[bi][2];
+    }
+    g2.putImageData(im2, 0, 0);
+    return c2;
+  };
+  const runWb = async (inputCv) => {
+    const c2 = document.createElement('canvas');
+    c2.width = ww; c2.height = wh;
+    const g2 = c2.getContext('2d', { willReadFrequently: true });
+    g2.drawImage(inputCv, 0, 0, ww, wh);
+    const dd = g2.getImageData(0, 0, ww, wh).data;
+    const inn = new Float32Array(ww * wh * 3);
+    for (let i = 0; i < ww * wh; i++) {
+      inn[i * 3] = dd[i * 4] / 127.5 - 1;
+      inn[i * 3 + 1] = dd[i * 4 + 1] / 127.5 - 1;
+      inn[i * 3 + 2] = dd[i * 4 + 2] / 127.5 - 1;
+    }
+    const ff = {};
+    ff[window.__wb.inputNames[0]] = new ort.Tensor('float32', inn, [1, wh, ww, 3]);
+    const oo = (await window.__wb.run(ff))[window.__wb.outputNames[0]];
+    const oi = new ImageData(ww, wh);
+    for (let i = 0; i < ww * wh; i++) {
+      oi.data[i * 4] = Math.max(0, Math.min(255, (oo.data[i * 3] + 1) * 127.5));
+      oi.data[i * 4 + 1] = Math.max(0, Math.min(255, (oo.data[i * 3 + 1] + 1) * 127.5));
+      oi.data[i * 4 + 2] = Math.max(0, Math.min(255, (oo.data[i * 3 + 2] + 1) * 127.5));
+      oi.data[i * 4 + 3] = 255;
+    }
+    const rc = document.createElement('canvas');
+    rc.width = ww; rc.height = wh;
+    rc.getContext('2d').putImageData(oi, 0, 0);
+    return rc;
+  };
+  const pre6 = await runWb(kmeans(src, 6));
+  const pre10 = await runWb(kmeans(src, 10));
+  const post6 = kmeans(wbCv, 6);
+  const both = kmeans(await runWb(kmeans(src, 10)), 5);
+
+  const withLines = (cv) => (g) => {
+    g.save(); g.filter = 'saturate(1.05) brightness(1.1)';
+    g.drawImage(cv, 0, 0, w, h); g.restore();
+    g.drawImage(inkCv, 0, 0);
+  };
   const tiles = {
-    'whitebox raw': (g) => { g.drawImage(wbCv, 0, 0, w, h); },
-    'whitebox + lines': (g) => {
-      g.save(); g.filter = 'saturate(1.05) brightness(1.1)';
-      g.drawImage(wbCv, 0, 0, w, h); g.restore();
-      g.drawImage(inkCv, 0, 0);
-    },
-    'whitebox light + lines': (g) => {
-      g.save(); g.filter = 'saturate(0.9) brightness(1.25)'; g.globalAlpha = 0.75;
-      g.globalCompositeOperation = 'multiply';
-      g.drawImage(wbCv, 0, 0, w, h); g.restore();
-      g.drawImage(inkCv, 0, 0);
-    },
+    'wb + lines': withLines(wbCv),
+    'km6 -> wb': withLines(pre6),
+    'km10 -> wb': withLines(pre10),
+    'wb -> km6': withLines(post6),
+    'km10 -> wb -> km5': withLines(both),
   };
   const pad = 8, labelH = 24;
   const names = Object.keys(tiles);
