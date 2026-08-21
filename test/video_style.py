@@ -439,11 +439,13 @@ async ([frameUrl, styleDefaults]) => {
   const tmp = document.createElement('canvas');
   tmp.width = w; tmp.height = h;
   if (window.__cfg.mask) {
-    // Juno backgrounds carry no shading: binarize the ink layer so the
-    // world is pure line-on-paper - the model's soft grey shadow wash
-    // (the mottling on the sheet) disappears; solid lines stay
+    // Juno backgrounds carry no shading: crush the soft grey shadow wash
+    // (low alpha over large areas) to zero, but keep a smooth ramp above
+    // the knee so line edges stay anti-aliased - a hard binarize made
+    // every line jagged
     for (let i = 3; i < styled.data.length; i += 4) {
-      styled.data[i] = styled.data[i] > 150 ? 255 : 0;
+      const t = Math.max(0, Math.min(1, (styled.data[i] - 95) / 90));
+      styled.data[i] = t * t * (3 - 2 * t) * 255;
     }
   }
   tmp.getContext('2d').putImageData(styled, 0, 0);
