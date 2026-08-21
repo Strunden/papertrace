@@ -35,25 +35,25 @@ async ([base, preset]) => {
   window.__session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
   window.__cfg = CFG;
 
-  const v = document.createElement('video');
-  v.src = '/test/_replay_footage.mp4'; v.muted = true;
-  await new Promise(r => { v.onloadedmetadata = r; });
-  window.__video = v;
-  return { dur: v.duration, w: v.videoWidth, h: v.videoHeight };
+  return 1;
 }
 """
 
 FRAME_JS = """
-async ([t, styleDefaults]) => {
-  const v = window.__video, cfg = window.__cfg, session = window.__session;
-  await new Promise(r => { v.onseeked = r; v.currentTime = t; });
-  // app-resolution source (MAX_SOURCE = 1000)
-  const k0 = Math.min(1, 1000 / Math.max(v.videoWidth, v.videoHeight));
-  const w = Math.round(v.videoWidth * k0), h = Math.round(v.videoHeight * k0);
+async ([frameUrl, styleDefaults]) => {
+  const cfg = window.__cfg, session = window.__session;
+  // The video element's seek loop silently freezes after a while in
+  // headless Chromium (delivered the same frame forever) - frames are
+  // pre-extracted with ffmpeg and loaded as plain images instead.
+  const fimg = new Image();
+  fimg.src = frameUrl;
+  await fimg.decode();
+  const k0 = Math.min(1, 1000 / Math.max(fimg.width, fimg.height));
+  const w = Math.round(fimg.width * k0), h = Math.round(fimg.height * k0);
   const src = document.createElement('canvas');
   src.width = w; src.height = h;
   const sctx = src.getContext('2d', { willReadFrequently: true });
-  sctx.drawImage(v, 0, 0, w, h);
+  sctx.drawImage(fimg, 0, 0, w, h);
 
   // nnPrepInput, as in app.js
   const k = Math.min(1, 512 / Math.max(w, h));
@@ -101,20 +101,48 @@ APP_STYLE = ("{ detail: 0.85, threshold: 0.18, thickness: 0.15,"
 
 
 def main():
-    src = os.path.abspath(sys.argv[1])
-    fps = float(sys.argv[2]) if len(sys.argv) > 2 else 15
-    preset = sys.argv[3] if len(sys.argv) > 3 else "artist"
-    max_frames = int(sys.argv[4]) if len(sys.argv) > 4 else 10 ** 6
-    footage = os.path.join(HERE, "_replay_footage.mp4")
-    print("transcoding to H.264...")
-    subprocess.run(["ffmpeg", "-y", "-i", src, "-an", "-c:v", "libx264",
-                    "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "18",
-                    footage], check=True, capture_output=True)
-
+    slice_of = None
+    args = sys.argv[1:]
+    if "--slice" in args:
+        i = args.index("--slice")
+        slice_of = (int(args[i + 1]), int(args[i + 2]))
+        args = args[:i] + args[i + 3:]
+    src = os.path.abspath(args[0])
+    fps = float(args[1]) if len(args) > 1 else 15
+    preset = args[2] if len(args) > 2 else "artist"
+    max_frames = int(args[3]) if len(args) > 3 else 10 ** 6
+    workers = int(os.environ.get("VS_WORKERS", "6"))
+    src_dir = os.path.join(ROOT, "build", "_src_frames")
     frames_dir = os.path.join(ROOT, "build", "_anim_frames")
-    os.makedirs(frames_dir, exist_ok=True)
-    for f in os.listdir(frames_dir):
-        os.remove(os.path.join(frames_dir, f))
+    if slice_of is None:
+        os.makedirs(src_dir, exist_ok=True)
+        for f in os.listdir(src_dir):
+            os.remove(os.path.join(src_dir, f))
+        print("extracting frames...")
+        subprocess.run(["ffmpeg", "-y", "-i", src, "-vf", f"fps={fps},scale=1000:-2",
+                        "-q:v", "3", os.path.join(src_dir, "s%05d.jpg")],
+                       check=True, capture_output=True)
+        os.makedirs(frames_dir, exist_ok=True)
+        for f in os.listdir(frames_dir):
+            os.remove(os.path.join(frames_dir, f))
+        if workers > 1:
+            # one subprocess per slice; each renders frames i % k == w
+            procs = [subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), src, str(fps), preset,
+                 str(max_frames), "--slice", str(wk), str(workers)])
+                for wk in range(workers)]
+            fails = [p2.wait() for p2 in procs]
+            if any(fails):
+                sys.exit("worker failed")
+            done = len(os.listdir(frames_dir))
+            print(f"workers done: {done} frames")
+            out = os.path.join(ROOT, "build", "sketch_anim.mp4")
+            subprocess.run(["ffmpeg", "-y", "-framerate", str(fps),
+                            "-i", os.path.join(frames_dir, "f%05d.jpg"),
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out],
+                           check=True, capture_output=True)
+            print("video:", out)
+            return
 
     s = socket.socket(); s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]; s.close()
@@ -135,31 +163,35 @@ def main():
             page.add_script_tag(content=STYLES_JS)
             page.add_script_tag(content=CLAHE_JS)
             page.evaluate(f"window.__preset = '{preset}'")
-            meta = page.evaluate(f"async (a) => ({PAGE_JS})(a)",
-                                 [f"http://127.0.0.1:{port}/docs/", preset])
-            n = min(max_frames, int(meta["dur"] * fps))
-            print(f"{meta['dur']:.1f}s of footage -> {n} frames at {fps} fps ({preset})")
+            page.evaluate(f"async (a) => ({PAGE_JS})(a)",
+                          [f"http://127.0.0.1:{port}/docs/", preset])
+            srcs = sorted(os.listdir(src_dir))
+            n = min(max_frames, len(srcs))
+            todo = [i for i in range(n) if slice_of is None or i % slice_of[1] == slice_of[0]]
+            print(f"{len(todo)} of {n} frames at {fps} fps ({preset})"
+                  + (f" [slice {slice_of[0]}/{slice_of[1]}]" if slice_of else ""))
             style = page.evaluate(f"() => ({APP_STYLE})")
             t_start = time.time()
-            for i in range(n):
-                url = page.evaluate(f"async (a) => ({FRAME_JS})(a)", [i / fps, style])
+            for j, i in enumerate(todo):
+                furl = f"http://127.0.0.1:{port}/build/_src_frames/{srcs[i]}"
+                url = page.evaluate(f"async (a) => ({FRAME_JS})(a)", [furl, style])
                 with open(os.path.join(frames_dir, f"f{i:05d}.jpg"), "wb") as f:
                     f.write(base64.b64decode(url.split(",", 1)[1]))
-                if i % 25 == 0:
+                if j % 25 == 0:
                     el = time.time() - t_start
-                    eta = el / max(1, i) * (n - i)
-                    print(f"  {i}/{n}  ({el:.0f}s elapsed, ~{eta:.0f}s left)")
+                    eta = el / max(1, j) * (len(todo) - j)
+                    print(f"  {j}/{len(todo)}  ({el:.0f}s elapsed, ~{eta:.0f}s left)")
             b.close()
     finally:
         httpd.shutdown()
-        os.remove(footage)
 
-    out = os.path.join(ROOT, "build", "sketch_anim.mp4")
-    subprocess.run(["ffmpeg", "-y", "-framerate", str(fps),
-                    "-i", os.path.join(frames_dir, "f%05d.jpg"),
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out],
-                   check=True, capture_output=True)
-    print("video:", out)
+    if slice_of is None:
+        out = os.path.join(ROOT, "build", "sketch_anim.mp4")
+        subprocess.run(["ffmpeg", "-y", "-framerate", str(fps),
+                        "-i", os.path.join(frames_dir, "f%05d.jpg"),
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out],
+                       check=True, capture_output=True)
+        print("video:", out)
 
 
 if __name__ == "__main__":
