@@ -68,77 +68,54 @@ def stabilize(src_dir, frames_dir):
     print(f"stabilized camera path over {n} source frames (smooth radius {R})")
 
 def hand_masks(src_dir):
-    """Segment the moving hand: align both neighbours onto each frame, take
-    the MIN of the two residuals (double difference - only what moves in
-    both directions survives, one-frame noise dies), threshold, close,
-    keep meaningful blobs. Written as m%05d.png next to the source frames;
-    the renderer colours ONLY inside the mask so the flat-colour effect
-    concentrates on the subject instead of shading everything."""
+    """Segment the hand + pen per frame, directly by appearance (motion
+    masks and GrabCut both proved imprecise): strict warm-skin chroma hugs
+    the hand contour; interior holes (pale knuckle highlights) are filled
+    by flood-fill from the border; only large components touching the
+    frame edge survive (the arm always enters from an edge - floating warm
+    patches are shadow, the wood desk corner is small); the neutral-dark
+    pen attaches within a small distance of skin. Written as RGBA
+    m%05d.png (mask in ALPHA - a grayscale PNG is fully opaque and made
+    destination-in a silent no-op)."""
     import cv2
     import numpy as np
     srcs = sorted(f for f in os.listdir(src_dir) if f.startswith("s"))
-    n = len(srcs)
-    load = lambda i: cv2.imread(os.path.join(src_dir, srcs[i]), 0)
-
-    def homog(a, b):
-        pts = cv2.goodFeaturesToTrack(a, 400, 0.01, 12)
-        if pts is None or len(pts) < 12:
-            return None
-        nxt, st, _ = cv2.calcOpticalFlowPyrLK(a, b, pts, None)
-        good = st.reshape(-1) == 1
-        if good.sum() < 12:
-            return None
-        H, _ = cv2.findHomography(pts[good], nxt[good], cv2.RANSAC, 3.0)
-        return H
-
-    # constrain to the sheet's neighbourhood: the desk shows parallax
-    # against the sheet plane (survives double-difference) but is not the
-    # subject. The printed markers give the sheet region exactly.
-    sys.path.insert(0, HERE)
-    from pen_tip_standalone import make_dictionary
-    det = cv2.aruco.ArucoDetector(make_dictionary(), cv2.aruco.DetectorParameters())
-
-    def sheet_roi(gray):
-        corners, ids, _ = det.detectMarkers(gray)
-        if ids is None or len(ids) < 2:
-            return None
-        pts = np.concatenate([c.reshape(4, 2) for c in corners]).astype(np.float32)
-        hull = cv2.convexHull(pts)
-        c = hull.mean(axis=0)
-        roi = np.zeros_like(gray)
-        cv2.fillPoly(roi, [((hull - c) * 1.45 + c).astype(np.int32)], 255)
-        return roi
-
-    masks = {}
-    for i in range(1, n - 1):
-        s0, s1, s2 = load(i - 1), load(i), load(i + 1)
-        h, w = s1.shape
-        Ha, Hb = homog(s0, s1), homog(s2, s1)
-        if Ha is None or Hb is None:
-            continue
-        d0 = cv2.absdiff(s1, cv2.warpPerspective(s0, Ha, (w, h), borderMode=cv2.BORDER_REPLICATE))
-        d1 = cv2.absdiff(s1, cv2.warpPerspective(s2, Hb, (w, h), borderMode=cv2.BORDER_REPLICATE))
-        res = cv2.GaussianBlur(cv2.min(d0, d1), (9, 9), 0)
-        m = (res > 11).astype(np.uint8) * 255
-        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8))
-        m = cv2.dilate(m, np.ones((13, 13), np.uint8))
-        roi = sheet_roi(s1)
-        if roi is not None:
-            m = cv2.bitwise_and(m, roi)
-        nl, lab, stats, _ = cv2.connectedComponentsWithStats(m)
-        keep = np.zeros_like(m)
+    for name in srcs:
+        f = cv2.imread(os.path.join(src_dir, name))
+        h, w = f.shape[:2]
+        B, G, R = f[..., 0].astype(np.int16), f[..., 1].astype(np.int16), f[..., 2].astype(np.int16)
+        luma = 0.114 * B + 0.587 * G + 0.299 * R
+        skin = ((R - B > 32) & (R > 95) & (R >= G)).astype(np.uint8) * 255
+        skin = cv2.morphologyEx(skin, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+        skin = cv2.morphologyEx(skin, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+        nl, lab, stats, _ = cv2.connectedComponentsWithStats(skin)
+        keep = np.zeros_like(skin)
         for j in range(1, nl):
-            if stats[j, cv2.CC_STAT_AREA] > 0.01 * w * h:
+            x0, y0 = stats[j, cv2.CC_STAT_LEFT], stats[j, cv2.CC_STAT_TOP]
+            x1 = x0 + stats[j, cv2.CC_STAT_WIDTH]
+            y1 = y0 + stats[j, cv2.CC_STAT_HEIGHT]
+            border = x0 <= 2 or y0 <= 2 or x1 >= w - 2 or y1 >= h - 2
+            if border and stats[j, cv2.CC_STAT_AREA] > 0.04 * w * h:
                 keep[lab == j] = 255
-        masks[i] = keep
-    for i in range(n):
-        m = masks.get(i)
-        if m is None:
-            m = masks.get(i + 1, masks.get(i - 1))
-        if m is None:
-            m = np.zeros_like(load(i))
-        cv2.imwrite(os.path.join(src_dir, srcs[i].replace("s", "m").replace(".jpg", ".png")), m)
-    print(f"hand masks written for {n} frames")
+        if keep.any():
+            # fill interior holes: flood the background from a corner,
+            # what the flood can't reach is inside the hand
+            # pad so the flood reaches every border-connected background
+            # region - a pocket sealed between the arm and the frame edge
+            # is NOT an interior hole
+            ff = np.pad(keep, 1)
+            fmask = np.zeros((h + 4, w + 4), np.uint8)
+            cv2.floodFill(ff, fmask, (0, 0), 255)
+            keep = keep | cv2.bitwise_not(ff[1:-1, 1:-1])
+            near = cv2.dilate(keep, np.ones((41, 41), np.uint8)) > 0
+            pen = ((np.abs(R - B) < 20) & (luma < 118) & near).astype(np.uint8) * 255
+            pen = cv2.morphologyEx(pen, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+            keep = cv2.morphologyEx(cv2.bitwise_or(keep, pen), cv2.MORPH_CLOSE,
+                                    np.ones((25, 25), np.uint8))
+            keep = (cv2.GaussianBlur(keep, (11, 11), 0) > 127).astype(np.uint8) * 255
+        rgba = np.dstack([np.full_like(keep, 255)] * 3 + [keep])
+        cv2.imwrite(os.path.join(src_dir, name.replace("s", "m").replace(".jpg", ".png")), rgba)
+    print(f"hand masks written for {len(srcs)} frames (appearance-based)")
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -168,10 +145,7 @@ async ([base, preset]) => {
   window.__cfg = CFG;
 
   // ---- flat-colour helpers (km10 -> whitebox -> km5, the user's pick)
-  window.__kmFit = (cv, K) => {
-    const g = cv.getContext('2d', { willReadFrequently: true });
-    const d = g.getImageData(0, 0, cv.width, cv.height).data;
-    const np = cv.width * cv.height;
+  window.__kmFitData = (d, np, K) => {
     const step = Math.max(1, Math.floor(np / 9000));
     const cent = [];
     for (let k = 0; k < K; k++) {
@@ -194,6 +168,11 @@ async ([base, preset]) => {
       }
     }
     return cent;
+  };
+  window.__kmFit = (cv, K) => {
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    return window.__kmFitData(g.getImageData(0, 0, cv.width, cv.height).data,
+                              cv.width * cv.height, K);
   };
   window.__kmAssign = (cv, cent) => {
     const g = cv.getContext('2d', { willReadFrequently: true });
@@ -282,15 +261,23 @@ async ([base, preset]) => {
 # Lock BOTH palettes to one reference frame - per-frame k-means would swap
 # colours between frames (palette flicker).
 PALETTE_JS = """
-async (refUrls) => {
+async ([refUrls, maskUrls]) => {
   // mosaic of frames across the whole clip - one frame biases the palette
   // toward whatever dominates it (a hand in shadow made everything sepia)
-  const imgs = [];
+  const imgs = [], msks = [];
   for (const u of refUrls) {
     const im = new Image();
     im.src = u;
     await im.decode();
     imgs.push(im);
+  }
+  for (const u of (maskUrls || [])) {
+    try {
+      const im = new Image();
+      im.src = u;
+      await im.decode();
+      msks.push(im);
+    } catch (e) { msks.push(null); }
   }
   const tw = 480, th = Math.round(imgs[0].height * tw / imgs[0].width);
   const cv = document.createElement('canvas');
@@ -300,6 +287,29 @@ async (refUrls) => {
   window.__pal10 = window.__kmFit(cv, 10);
   const wb = await window.__runWb(window.__kmAssign(cv, window.__pal10));
   window.__pal5 = window.__kmFit(wb, 6);
+  if (msks.length && msks.some(Boolean)) {
+    // the subject gets its OWN palette: 4 tones fitted on masked skin
+    // pixels only, so shadowed skin shades in warm tones instead of
+    // falling onto the global palette's paper-grey
+    const mc = document.createElement('canvas');
+    mc.width = wb.width; mc.height = wb.height;
+    const mg = mc.getContext('2d', { willReadFrequently: true });
+    const sth = wb.height / imgs.length;
+    msks.forEach((im, i) => { if (im) mg.drawImage(im, 0, i * sth, wb.width, sth); });
+    const ma = mg.getImageData(0, 0, wb.width, wb.height).data;
+    const wd = wb.getContext('2d', { willReadFrequently: true })
+      .getImageData(0, 0, wb.width, wb.height).data;
+    const samples = [];
+    for (let i = 0; i < wb.width * wb.height; i++) {
+      if (ma[i * 4 + 3] > 127) {
+        samples.push(wd[i * 4], wd[i * 4 + 1], wd[i * 4 + 2], 255);
+      }
+    }
+    if (samples.length > 400) {
+      window.__palSkin = window.__kmFitData(new Uint8ClampedArray(samples),
+                                            samples.length / 4, 4);
+    }
+  }
   return 1;
 }
 """
@@ -377,7 +387,8 @@ async ([frameUrl, styleDefaults]) => {
     const wbg = wbs.getContext('2d');
     wbg.filter = 'blur(2px)';
     wbg.drawImage(wb, 0, 0);
-    window.__modeFilter(window.__kmAssign(wbs, window.__pal5), 3);
+    window.__modeFilter(window.__kmAssign(wbs,
+      window.__cfg.mask && window.__palSkin ? window.__palSkin : window.__pal5), 3);
     const colour = document.createElement('canvas');
     colour.width = w; colour.height = h;
     const cg = colour.getContext('2d');
@@ -401,22 +412,18 @@ async ([frameUrl, styleDefaults]) => {
         pg.drawImage(src, 0, 0, w, h);
         const pim = pg.getImageData(0, 0, w, h);
         const cim = cg.getImageData(0, 0, w, h);
-        const cim2 = cg.getImageData(0, 0, w, h);
+
         for (let i = 0; i < w * h; i++) {
           const r = pim.data[i * 4], gg = pim.data[i * 4 + 1], b = pim.data[i * 4 + 2];
           const luma = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
-          // skin is warm AND clearly red-dominant; warm shadow on white
-          // paper is near-neutral and must not get the flat-colour tier
-          const skin = r - b > 24 && r > 95 && r > gg && r - gg > 10;
           const inMask = cim.data[i * 4 + 3] > 96;
-          // photo tier = the NEUTRAL dark held object (the pen). Shadowed
-          // ink on paper is dark but WARM - that belongs to the line
-          // layer, not the photo layer.
-          const pen = !skin && luma < 118 && r - b < 20;
+          // GrabCut draws a precise contour, so everything inside IS the
+          // subject: flat colour throughout (highlights get the palette's
+          // light tone instead of punching holes in the hand). Only the
+          // NEUTRAL dark pen keeps photo texture - shadowed ink is warm.
+          const pen = luma < 118 && r - b < 20;
           pim.data[i * 4 + 3] = inMask && pen ? 255 : 0;
-          if (inMask && !skin && !pen) cim2.data[i * 4 + 3] = 0;
         }
-        cg.putImageData(cim2, 0, 0);
         pg.putImageData(pim, 0, 0);
         // soften the class boundary a hair
         cg.save();
@@ -431,6 +438,14 @@ async ([frameUrl, styleDefaults]) => {
   }
   const tmp = document.createElement('canvas');
   tmp.width = w; tmp.height = h;
+  if (window.__cfg.mask) {
+    // Juno backgrounds carry no shading: binarize the ink layer so the
+    // world is pure line-on-paper - the model's soft grey shadow wash
+    // (the mottling on the sheet) disappears; solid lines stay
+    for (let i = 3; i < styled.data.length; i += 4) {
+      styled.data[i] = styled.data[i] > 150 ? 255 : 0;
+    }
+  }
   tmp.getContext('2d').putImageData(styled, 0, 0);
   oc.drawImage(tmp, 0, 0);
   return outCv.toDataURL('image/jpeg', 0.92);
@@ -517,9 +532,11 @@ def main():
             srcs = sorted(f for f in os.listdir(src_dir) if f.startswith("s"))
             n = min(max_frames, len(srcs))
             if preset in ("flat", "cutout"):
-                refs = [f"http://127.0.0.1:{port}/build/_src_frames/{srcs[int(n * f)]}"
-                        for f in (0.1, 0.3, 0.5, 0.7, 0.9)]
-                page.evaluate(f"async (a) => ({PALETTE_JS})(a)", refs)
+                picks = [srcs[int(n * f)] for f in (0.1, 0.3, 0.5, 0.7, 0.9)]
+                refs = [f"http://127.0.0.1:{port}/build/_src_frames/{f}" for f in picks]
+                mrefs = ([r.replace("/s", "/m").replace(".jpg", ".png") for r in refs]
+                         if preset == "cutout" else [])
+                page.evaluate(f"async (a) => ({PALETTE_JS})(a)", [refs, mrefs])
             todo = [i for i in range(n) if slice_of is None or i % slice_of[1] == slice_of[0]]
             print(f"{len(todo)} of {n} frames at {fps} fps ({preset})"
                   + (f" [slice {slice_of[0]}/{slice_of[1]}]" if slice_of else ""))
