@@ -82,13 +82,114 @@ async ([base, preset]) => {
   const CFG = {
     artist: { file: 'lineart.onnx', snap: 4, layout: 'nchw', norm: '01', out: 'ink', enhance: true },
     rough:  { file: 'rough.onnx',   snap: 4, layout: 'nchw', norm: '01', out: 'ink', enhance: true },
+    flat:   { file: 'lineart.onnx', snap: 4, layout: 'nchw', norm: '01', out: 'ink', enhance: true, wb: true },
   }[preset];
   ort.env.wasm.wasmPaths = base;
   ort.env.wasm.numThreads = 1;
-  const model = await (await fetch(base + CFG.file)).arrayBuffer();
-  window.__session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
+  const load = async (u) => ort.InferenceSession.create(
+    await (await fetch(u)).arrayBuffer(), { executionProviders: ['wasm'] });
+  window.__session = await load(base + CFG.file);
+  if (CFG.wb) window.__wb = await load(base.replace('/docs/', '/') + 'build/colour_models/whitebox.onnx');
   window.__cfg = CFG;
 
+  // ---- flat-colour helpers (km10 -> whitebox -> km5, the user's pick)
+  window.__kmFit = (cv, K) => {
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    const d = g.getImageData(0, 0, cv.width, cv.height).data;
+    const np = cv.width * cv.height;
+    const step = Math.max(1, Math.floor(np / 9000));
+    const cent = [];
+    for (let k = 0; k < K; k++) {
+      const i = Math.floor((k + 0.5) / K * np) * 4;
+      cent.push([d[i], d[i + 1], d[i + 2]]);
+    }
+    for (let it = 0; it < 10; it++) {
+      const acc = cent.map(() => [0, 0, 0, 0]);
+      for (let i = 0; i < np; i += step) {
+        const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2];
+        let bi = 0, bd = 1e9;
+        for (let k = 0; k < K; k++) {
+          const dd = (cent[k][0] - r) ** 2 + (cent[k][1] - gg) ** 2 + (cent[k][2] - b) ** 2;
+          if (dd < bd) { bd = dd; bi = k; }
+        }
+        acc[bi][0] += r; acc[bi][1] += gg; acc[bi][2] += b; acc[bi][3]++;
+      }
+      for (let k = 0; k < K; k++) {
+        if (acc[k][3]) cent[k] = [acc[k][0] / acc[k][3], acc[k][1] / acc[k][3], acc[k][2] / acc[k][3]];
+      }
+    }
+    return cent;
+  };
+  window.__kmAssign = (cv, cent) => {
+    const g = cv.getContext('2d', { willReadFrequently: true });
+    const im = g.getImageData(0, 0, cv.width, cv.height);
+    const d = im.data;
+    for (let i = 0; i < cv.width * cv.height; i++) {
+      const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2];
+      let bi = 0, bd = 1e9;
+      for (let k = 0; k < cent.length; k++) {
+        const dd = (cent[k][0] - r) ** 2 + (cent[k][1] - gg) ** 2 + (cent[k][2] - b) ** 2;
+        if (dd < bd) { bd = dd; bi = k; }
+      }
+      d[i * 4] = cent[bi][0]; d[i * 4 + 1] = cent[bi][1]; d[i * 4 + 2] = cent[bi][2];
+    }
+    g.putImageData(im, 0, 0);
+    return cv;
+  };
+  window.__runWb = async (cv) => {
+    const k = Math.min(1, 720 / Math.max(cv.width, cv.height));
+    const ww = Math.round(cv.width * k / 4) * 4, wh = Math.round(cv.height * k / 4) * 4;
+    const c = document.createElement('canvas');
+    c.width = ww; c.height = wh;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(cv, 0, 0, ww, wh);
+    const d = g.getImageData(0, 0, ww, wh).data;
+    const inn = new Float32Array(ww * wh * 3);
+    for (let i = 0; i < ww * wh; i++) {
+      inn[i * 3] = d[i * 4] / 127.5 - 1;
+      inn[i * 3 + 1] = d[i * 4 + 1] / 127.5 - 1;
+      inn[i * 3 + 2] = d[i * 4 + 2] / 127.5 - 1;
+    }
+    const f = {};
+    f[window.__wb.inputNames[0]] = new ort.Tensor('float32', inn, [1, wh, ww, 3]);
+    const o = (await window.__wb.run(f))[window.__wb.outputNames[0]];
+    const oi = new ImageData(ww, wh);
+    for (let i = 0; i < ww * wh; i++) {
+      oi.data[i * 4] = Math.max(0, Math.min(255, (o.data[i * 3] + 1) * 127.5));
+      oi.data[i * 4 + 1] = Math.max(0, Math.min(255, (o.data[i * 3 + 1] + 1) * 127.5));
+      oi.data[i * 4 + 2] = Math.max(0, Math.min(255, (o.data[i * 3 + 2] + 1) * 127.5));
+      oi.data[i * 4 + 3] = 255;
+    }
+    const rc = document.createElement('canvas');
+    rc.width = ww; rc.height = wh;
+    rc.getContext('2d').putImageData(oi, 0, 0);
+    return rc;
+  };
+  return 1;
+}
+"""
+
+# Lock BOTH palettes to one reference frame - per-frame k-means would swap
+# colours between frames (palette flicker).
+PALETTE_JS = """
+async (refUrls) => {
+  // mosaic of frames across the whole clip - one frame biases the palette
+  // toward whatever dominates it (a hand in shadow made everything sepia)
+  const imgs = [];
+  for (const u of refUrls) {
+    const im = new Image();
+    im.src = u;
+    await im.decode();
+    imgs.push(im);
+  }
+  const tw = 480, th = Math.round(imgs[0].height * tw / imgs[0].width);
+  const cv = document.createElement('canvas');
+  cv.width = tw; cv.height = th * imgs.length;
+  const g = cv.getContext('2d');
+  imgs.forEach((im, i) => g.drawImage(im, 0, i * th, tw, th));
+  window.__pal10 = window.__kmFit(cv, 10);
+  const wb = await window.__runWb(window.__kmAssign(cv, window.__pal10));
+  window.__pal5 = window.__kmFit(wb, 6);
   return 1;
 }
 """
@@ -136,12 +237,21 @@ async ([frameUrl, styleDefaults]) => {
 
   const frame = sctx.getImageData(0, 0, w, h);
   const styled = applyStyle(frame, Object.assign({}, styleDefaults,
-    { preset: window.__preset, neuralMaps: { [window.__preset]: map } }));
+    { preset: 'artist', neuralMaps: { artist: map } }));
   const outCv = document.createElement('canvas');
   outCv.width = w; outCv.height = h;
   const oc = outCv.getContext('2d');
   oc.fillStyle = '#f6f1e4';                       // warm paper
   oc.fillRect(0, 0, w, h);
+  if (window.__pal10) {
+    // km10 -> whitebox -> km5, fixed palettes: flat clean colour under lines
+    const wb = await window.__runWb(window.__kmAssign(src, window.__pal10));
+    window.__kmAssign(wb, window.__pal5);
+    oc.save();
+    oc.filter = 'saturate(1.05) brightness(1.16)';
+    oc.drawImage(wb, 0, 0, w, h);
+    oc.restore();
+  }
   const tmp = document.createElement('canvas');
   tmp.width = w; tmp.height = h;
   tmp.getContext('2d').putImageData(styled, 0, 0);
@@ -227,6 +337,10 @@ def main():
                           [f"http://127.0.0.1:{port}/docs/", preset])
             srcs = sorted(os.listdir(src_dir))
             n = min(max_frames, len(srcs))
+            if preset == "flat":
+                refs = [f"http://127.0.0.1:{port}/build/_src_frames/{srcs[int(n * f)]}"
+                        for f in (0.1, 0.3, 0.5, 0.7, 0.9)]
+                page.evaluate(f"async (a) => ({PALETTE_JS})(a)", refs)
             todo = [i for i in range(n) if slice_of is None or i % slice_of[1] == slice_of[0]]
             print(f"{len(todo)} of {n} frames at {fps} fps ({preset})"
                   + (f" [slice {slice_of[0]}/{slice_of[1]}]" if slice_of else ""))
