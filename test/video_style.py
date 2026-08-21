@@ -13,6 +13,60 @@ import http.server, os, re, socket, subprocess, sys, threading
 
 from playwright.sync_api import sync_playwright
 
+
+def stabilize(src_dir, frames_dir):
+    """Camera-path smoothing BEFORE styling: per-frame orphan removal and
+    temporal medians barely helped (measured: 0.4% ink removed - the noise
+    is the whole drawing jittering with the handheld camera, not popping
+    strokes). So: accumulate frame-to-frame homographies, smooth the
+    trajectory (moving average), warp every source frame onto the smooth
+    path and crop in 7% to hide borders. The canvas holds still; only the
+    hand moves. Runs on the SOURCE frames so CLAHE + the model see stable
+    input too."""
+    import cv2
+    import numpy as np
+    srcs = sorted(os.listdir(src_dir))
+    n = len(srcs)
+    if n < 3:
+        return
+    imgs = [cv2.imread(os.path.join(src_dir, f)) for f in srcs]
+    grays = [cv2.cvtColor(im, cv2.COLOR_BGR2GRAY) for im in imgs]
+    h, w = grays[0].shape
+
+    def homog(a, b):
+        pts = cv2.goodFeaturesToTrack(a, 400, 0.01, 12)
+        if pts is None or len(pts) < 12:
+            return np.eye(3)
+        nxt, st, _ = cv2.calcOpticalFlowPyrLK(a, b, pts, None)
+        good = st.reshape(-1) == 1
+        if good.sum() < 12:
+            return np.eye(3)
+        H, _ = cv2.findHomography(pts[good], nxt[good], cv2.RANSAC, 3.0)
+        return H if H is not None else np.eye(3)
+
+    # accumulated path: frame i -> frame 0 coordinates
+    acc = [np.eye(3)]
+    for i in range(1, n):
+        acc.append(acc[-1] @ homog(grays[i], grays[i - 1]))
+    # smooth the path with a centred moving average (in matrix space - fine
+    # for the small inter-frame motions involved)
+    R = 6
+    out_frames = []
+    for i in range(n):
+        lo, hi = max(0, i - R), min(n, i + R + 1)
+        sm = np.mean(np.stack(acc[lo:hi]), axis=0)
+        corr = np.linalg.inv(acc[i]) @ sm      # wait-free: maps i onto smooth path
+        corr = np.linalg.inv(corr)
+        # centre-crop zoom hides the wandering borders
+        z = 1.07
+        Z = np.array([[z, 0, w / 2 * (1 - z)], [0, z, h / 2 * (1 - z)], [0, 0, 1]])
+        M = Z @ np.linalg.inv(sm) @ acc[i]
+        out_frames.append(cv2.warpPerspective(
+            imgs[i], M, (w, h), borderMode=cv2.BORDER_REPLICATE))
+    for f, im in zip(srcs, out_frames):
+        cv2.imwrite(os.path.join(src_dir, f), im, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    print(f"stabilized camera path over {n} source frames (smooth radius {R})")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
@@ -125,6 +179,9 @@ def main():
         os.makedirs(frames_dir, exist_ok=True)
         for f in os.listdir(frames_dir):
             os.remove(os.path.join(frames_dir, f))
+        stab = os.environ.get("VS_STABILIZE", "1") != "0"
+        if stab:
+            stabilize(src_dir, frames_dir)
         if workers > 1:
             # one subprocess per slice; each renders frames i % k == w
             procs = [subprocess.Popen(
@@ -137,7 +194,9 @@ def main():
             done = len(os.listdir(frames_dir))
             print(f"workers done: {done} frames")
             stem = os.path.splitext(os.path.basename(src))[0]
-            out = os.path.join(ROOT, "build", f"sketch_{stem}_{preset}_{int(fps)}fps.mp4")
+            out = os.path.join(ROOT, "build",
+                               f"sketch_{stem}_{preset}_{int(fps)}fps"
+                               + ("_stab" if stab else "") + ".mp4")
             subprocess.run(["ffmpeg", "-y", "-framerate", str(fps),
                             "-i", os.path.join(frames_dir, "f%05d.jpg"),
                             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out],
