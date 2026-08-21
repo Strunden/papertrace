@@ -111,7 +111,7 @@ def main():
     fps = float(args[1]) if len(args) > 1 else 15
     preset = args[2] if len(args) > 2 else "artist"
     max_frames = int(args[3]) if len(args) > 3 else 10 ** 6
-    workers = int(os.environ.get("VS_WORKERS", "6"))
+    workers = int(os.environ.get("VS_WORKERS", str(max(4, (os.cpu_count() or 6) - 1))))
     src_dir = os.path.join(ROOT, "build", "_src_frames")
     frames_dir = os.path.join(ROOT, "build", "_anim_frames")
     if slice_of is None:
@@ -136,7 +136,8 @@ def main():
                 sys.exit("worker failed")
             done = len(os.listdir(frames_dir))
             print(f"workers done: {done} frames")
-            out = os.path.join(ROOT, "build", "sketch_anim.mp4")
+            stem = os.path.splitext(os.path.basename(src))[0]
+            out = os.path.join(ROOT, "build", f"sketch_{stem}_{preset}_{int(fps)}fps.mp4")
             subprocess.run(["ffmpeg", "-y", "-framerate", str(fps),
                             "-i", os.path.join(frames_dir, "f%05d.jpg"),
                             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", out],
